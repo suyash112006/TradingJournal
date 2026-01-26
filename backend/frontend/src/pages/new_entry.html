@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/layout.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/components.css') }}">
+<style>
+    /* Discipline Rating */
+    /* Discipline Rating */
+    .discipline-box {
+        margin-top: 20px;
+    }
+
+    .discipline-title {
+        font-size: 0.9rem;
+        color: #9ca3af;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .discipline-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .discipline-title {
+        font-size: 0.9rem;
+        color: #9ca3af;
+    }
+
+    .discipline-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    /* Stars base */
+    .stars span {
+        font-size: 1.9rem;
+        cursor: pointer;
+        color: #333;
+        transition: transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease;
+    }
+
+    .stars span:hover {
+        transform: scale(1.25);
+    }
+
+    /* Color levels */
+    .stars.level-1 .active {
+        color: #ff3d00;
+        text-shadow: 0 0 8px rgba(255, 61, 0, 0.6);
+    }
+
+    .stars.level-2 .active {
+        color: #ff9800;
+        text-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+    }
+
+    .stars.level-3 .active {
+        color: #f5c518;
+        text-shadow: 0 0 8px rgba(245, 197, 24, 0.6);
+    }
+
+    .stars.level-4 .active {
+        color: #8bc34a;
+        text-shadow: 0 0 8px rgba(139, 195, 74, 0.6);
+    }
+
+    .stars.level-5 .active {
+        color: #00e676;
+        text-shadow: 0 0 10px rgba(0, 230, 118, 0.7);
+    }
+
+    /* Result text */
+    /* Result text */
+    .discipline-result {
+        font-size: 0.85rem;
+        font-weight: 600;
+        min-width: 80px;
+    }
+
+    /* Multi-Image Preview Grid */
+    .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+        margin-top: 15px;
+    }
+
+    .preview-item {
+        position: relative;
+        aspect-ratio: 16/9;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #333;
+        background: #111;
+        cursor: grab;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .preview-item:hover {
+        border-color: #3b82f6;
+    }
+
+    .preview-item.dragging {
+        opacity: 0.5;
+        border: 2px dashed #3b82f6;
+        cursor: grabbing;
+    }
+
+    .preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .preview-item .remove-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .preview-item:hover .remove-btn {
+        opacity: 1;
+    }
+
+    /* Form Normalization */
+    .form-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .form-input {
+        width: 100%;
+        background: #0b0b0f;
+        border: 1px solid #1f2937;
+        color: white;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 0.875rem;
+        outline: none;
+        transition: border-color 0.2s ease;
+    }
+
+    .form-input:focus {
+        border-color: #4b5563;
+    }
+
+    .form-input.mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .form-group label {
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    select {
+        height: 48px;
+    }
+
+    /* Override browser autofill white background */
+    .form-input:-webkit-autofill,
+    .form-input:-webkit-autofill:hover,
+    .form-input:-webkit-autofill:focus,
+    .form-input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #0b0b0f inset !important;
+        -webkit-text-fill-color: white !important;
+        border-color: #22C55E !important;
+        transition: background-color 5000s ease-in-out 0s;
+    }
+
+    input:-webkit-autofill,
+    select:-webkit-autofill,
+    textarea:-webkit-autofill {
+        -webkit-box-shadow: 0 0 0 1000px #0b0b0f inset !important;
+        -webkit-text-fill-color: white !important;
+    }
+
+
+    /* RR card — SAME AS INPUT */
+    .rr-card {
+        height: 48px;
+        padding: 0 16px;
+        border-radius: 12px;
+        background: #0b0b0f;
+        border: 1px solid #1f2937;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    /* RR Value Styling */
+    .rr-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #22c55e;
+        letter-spacing: 0.04em;
+    }
+
+    /* RR animation — subtle like input focus */
+    @keyframes rrPulse {
+        0% {
+            box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+        }
+
+        50% {
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+        }
+
+        100% {
+            box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+        }
+    }
+
+    .rr-animate {
+        animation: rrPulse 500ms ease-out;
+    }
+
+    /* Date Input Icon Customization */
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+        opacity: 0.5;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+    }
+
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+        opacity: 1;
+    }
+
+    /* Transparent Glass Card for New Entry */
+    .entry-card {
+        background: rgba(11, 11, 15, 0.4);
+        /* Transparent Dark */
+        backdrop-filter: blur(16px);
+        /* Blur Effect */
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        /* Subtle Border */
+        border-radius: 16px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header mb-8">
+    <h1 class="page-title">Log New Trade</h1>
+</header>
+
+<div class="entry-card p-8" style="max-width: 900px;">
+    <form method="POST" action="{{ url_for('new_entry') }}" enctype="multipart/form-data">
+        <div class="grid grid-cols-2 gap-6 mb-6">
+
+            <!-- Col 1 -->
+            <div class="form-stack">
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Pair</label>
+                    <input type="text" name="symbol" class="form-input mono" placeholder="e.g. BTC/USD" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Trading
+                        Session</label>
+                    <div class="relative">
+                        <select name="session" class="form-input h-[48px] appearance-none cursor-pointer">
+                            <option value="" disabled selected>Select Session</option>
+                            <option value="Asian">Asian</option>
+                            <option value="London">London</option>
+                            <option value="New York">New York</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Date
+                        Executed</label>
+                    <input type="datetime-local" name="date" class="form-input">
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Direction</label>
+                    <div class="relative">
+                        <select name="direction" class="form-input h-[48px] appearance-none cursor-pointer">
+                            <option value="Long">Long</option>
+                            <option value="Short">Short</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Strategy</label>
+                    <input type="text" name="strategy" class="form-input" placeholder="e.g. Breakout">
+                </div>
+
+
+            </div>
+
+            <!-- Col 2 -->
+            <div class="form-stack">
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Entry
+                        Price</label>
+                    <input type="number" step="any" name="entry_price" class="form-input mono" placeholder="0.00"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Stop Loss</label>
+                    <input type="number" step="any" name="stop_loss" class="form-input mono" placeholder="0.00">
+                </div>
+
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Take
+                        Profit</label>
+                    <input type="number" step="any" name="take_profit" id="takeProfitInput" class="form-input mono"
+                        placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Realized
+                        P&L</label>
+                    <input type="number" step="any" name="pnl" class="form-input mono"
+                        placeholder="0.00 (Positive for Win, Negative for Loss)" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Quantity /
+                        Size</label>
+                    <input type="number" step="any" name="quantity" class="form-input mono" placeholder="1.0">
+                </div>
+            </div>
+        </div>
+
+
+
+
+        <!-- Psychology Section (Full Width) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+            <!-- Emotion + Discipline (LEFT COLUMN) -->
+            <div class="form-group">
+                <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                    Emotion / Mindset
+                </label>
+
+                <select name="emotion" class="form-input h-[48px] appearance-none cursor-pointer">
+                    <option value="Neutral" selected>Neutral</option>
+                    <option value="Greedy">Greedy</option>
+                    <option value="Fearful">Fearful</option>
+                    <option value="Patient">Patient</option>
+                    <option value="Disciplined">Disciplined</option>
+                    <option value="Impulsive">Impulsive</option>
+                </select>
+
+                <!-- Discipline Rating -->
+                <div class="discipline-box mt-4">
+                    <label class="discipline-title">Discipline Rating</label>
+
+                    <div class="discipline-row">
+                        <div class="stars" id="disciplineStars">
+                            <span data-value="1" class="text-2xl">★</span>
+                            <span data-value="2" class="text-2xl">★</span>
+                            <span data-value="3" class="text-2xl">★</span>
+                            <span data-value="4" class="text-2xl">★</span>
+                            <span data-value="5" class="text-2xl">★</span>
+                        </div>
+
+                        <div class="discipline-result" id="disciplineResult" style="color: #666;">
+                            Select rating
+                        </div>
+                    </div>
+
+                    <!-- Hidden input -->
+                    <input type="hidden" name="discipline" id="disciplineInput">
+                </div>
+            </div>
+
+            <!-- Risk : Reward (RIGHT COLUMN) -->
+            <div class="form-group">
+                <!-- Invisible label to force alignment with the left column -->
+                <label class="block text-xs font-bold uppercase tracking-wider text-transparent mb-2 select-none">
+                    Risk : Reward
+                </label>
+                <div id="rrDisplay" class="hidden rr-card w-full justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Risk : Reward</span>
+                    <span id="rrValue" class="rr-value">1:4.50</span>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="form-group mb-6">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trade Notes &
+                Analysis</label>
+            <textarea name="notes" class="form-input h-32"
+                placeholder="Why did you take this trade? How did you feel?"></textarea>
+        </div>
+
+        <div class="form-group mb-8">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Screenshots &
+                Media</label>
+
+            <!-- Multi-Image Preview Container -->
+            <div id="previewContainer" class="preview-grid mb-6"></div>
+
+            <div class="bg-[#0b0b0f] border border-gray-800 rounded-xl p-6 border-dashed hover:border-gray-600 transition-colors cursor-pointer group mb-4"
+                onclick="document.getElementById('screenshotFile').click()">
+                <div class="text-center">
+                    <i data-lucide="upload-cloud"
+                        class="w-8 h-8 text-gray-600 group-hover:text-[var(--profit)] mb-2 inline-block transition-colors"></i>
+                    <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Select files or drag & drop</p>
+                </div>
+                <input type="file" id="screenshotFile" name="screenshot" class="hidden" accept="image/*" multiple
+                    onchange="handleMultipleFiles(this)">
+            </div>
+
+            <!-- Hidden Order Persistence -->
+            <input type="hidden" name="screenshot_order" id="screenshotOrder">
+
+            <div class="flex gap-2 mt-6">
+                <input type="text" id="screenshot_url" name="screenshot_url" class="form-input"
+                    placeholder="Or add image URL">
+                <button type="button"
+                    class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#222] transition-colors"
+                    style="white-space: nowrap;"
+                    onclick="const url = document.getElementById('screenshot_url').value; if(url) window.open(url, '_blank'); else alert('Please enter a URL');">
+                    Test
+                </button>
+            </div>
+        </div>
+
+        <script>
+            const stars = document.querySelectorAll("#disciplineStars span");
+            const starsContainer = document.getElementById("disciplineStars");
+            const result = document.getElementById("disciplineResult");
+            const input = document.getElementById("disciplineInput");
+
+            const labels = {
+                1: "Very Poor",
+                2: "Poor",
+                3: "Average",
+                4: "Very Good",
+                5: "Excellent"
+            };
+
+            const colors = {
+                1: "#ff3d00",
+                2: "#ff9800",
+                3: "#f5c518",
+                4: "#8bc34a",
+                5: "#00e676"
+            };
+
+            stars.forEach(star => {
+                star.addEventListener("mouseover", () => {
+                    highlightStars(star.dataset.value);
+                });
+
+                star.addEventListener("mouseout", () => {
+                    highlightStars(input.value || 0);
+                });
+
+                star.addEventListener("click", () => {
+                    const value = star.dataset.value;
+                    input.value = value;
+                    highlightStars(value);
+                    result.textContent = labels[value];
+                    result.style.color = colors[value];
+                });
+            });
+
+            function highlightStars(value) {
+                stars.forEach(star => {
+                    star.classList.toggle(
+                        "active",
+                        star.dataset.value <= value
+                    );
+                });
+                if (starsContainer) {
+                    starsContainer.className = "stars level-" + value;
+                }
+            }
+
+            // --- Multi-Image Logic ---
+            let draggedItem = null;
+
+            function handleMultipleFiles(input) {
+                const files = Array.from(input.files);
+                const container = document.getElementById("previewContainer");
+
+                files.forEach((file, index) => {
+                    if (!file.type.startsWith("image/")) return;
+
+                    const reader = new FileReader();
+                    reader.onload = e => {
+                        const div = document.createElement("div");
+                        div.className = "preview-item";
+                        div.draggable = true;
+                        div.dataset.name = file.name;
+
+                        const img = document.createElement("img");
+                        img.src = e.target.result;
+                        img.title = "Drag to reorder | Click to enlarge";
+                        img.onclick = () => openFullscreen(e.target.result, img);
+
+                        const removeBtn = document.createElement("div");
+                        removeBtn.className = "remove-btn";
+                        removeBtn.innerHTML = "×";
+                        removeBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            div.remove();
+                            updateOrder();
+                        };
+
+                        div.appendChild(img);
+                        div.appendChild(removeBtn);
+                        container.appendChild(div);
+
+                        setupDragEvents(div);
+                        updateOrder();
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            function setupDragEvents(item) {
+                item.addEventListener("dragstart", () => {
+                    draggedItem = item;
+                    item.classList.add("dragging");
+                });
+
+                item.addEventListener("dragend", () => {
+                    draggedItem = null;
+                    item.classList.remove("dragging");
+                    updateOrder();
+                });
+
+                const container = document.getElementById("previewContainer");
+                container.addEventListener("dragover", e => {
+                    e.preventDefault();
+                    const afterElement = getDragAfterElement(container, e.clientX);
+                    if (afterElement == null) {
+                        container.appendChild(draggedItem);
+                    } else {
+                        container.insertBefore(draggedItem, afterElement);
+                    }
+                });
+            }
+
+            function getDragAfterElement(container, x) {
+                const draggableElements = [...container.querySelectorAll(".preview-item:not(.dragging)")];
+                return draggableElements.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = x - box.left - box.width / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+
+            function updateOrder() {
+                const order = [...document.querySelectorAll(".preview-item")].map(el => el.dataset.name);
+                const orderInput = document.getElementById("screenshotOrder");
+                if (orderInput) {
+                    orderInput.value = JSON.stringify(order);
+                }
+            }
+
+            // R:R Calculation Logic
+            const entryInput = document.querySelector('input[name="entry_price"]');
+            const stopInput = document.querySelector('input[name="stop_loss"]');
+            const tpInput = document.getElementById('takeProfitInput');
+            const dirInput = document.querySelector('select[name="direction"]');
+            const rrDisplay = document.getElementById('rrDisplay');
+            const rrValue = document.getElementById('rrValue');
+
+            let lastRR = null;
+
+            function calculateRR() {
+                const entry = parseFloat(entryInput.value);
+                const stop = parseFloat(stopInput.value);
+                const tp = parseFloat(tpInput.value);
+                const direction = dirInput.value;
+
+                if (!entry || !stop || !tp) {
+                    rrDisplay.classList.add('hidden');
+                    return;
+                }
+
+                let risk, reward;
+
+                if (direction === "Long") {
+                    risk = entry - stop;
+                    reward = tp - entry;
+                } else {
+                    risk = stop - entry;
+                    reward = entry - tp;
+                }
+
+                if (risk <= 0 || reward <= 0) {
+                    rrDisplay.classList.add('hidden');
+                    return;
+                }
+
+                const ratio = (reward / risk).toFixed(2);
+
+                // Only animate if RR actually changed
+                if (ratio !== lastRR) {
+                    rrValue.textContent = `1:${ratio}`;
+
+                    rrDisplay.classList.remove('rr-animate');
+                    void rrDisplay.offsetWidth; // force reflow
+                    rrDisplay.classList.add('rr-animate');
+
+                    lastRR = ratio;
+                }
+
+                rrDisplay.classList.remove('hidden');
+                // Removed dynamic border color to keep consistent dark theme outline
+                rrDisplay.style.borderColor = "";
+            }
+
+            [entryInput, stopInput, tpInput, dirInput].forEach(input => {
+                if (input) input.addEventListener('input', calculateRR);
+                if (input) input.addEventListener('change', calculateRR);
+            });
+
+            // Color Logic for Selects & Defaults
+            document.addEventListener("DOMContentLoaded", () => {
+                const selects = document.querySelectorAll("select");
+
+                // Helper to set color based on interaction
+                function updateSelectColor(sel) {
+                    // If it was just focused or changed, make it white
+                    // But if it's the default value on load?
+                    // We just rely on the 'change' event to turn it white permanently
+                    sel.style.color = "#E0E0E0";
+                }
+
+                selects.forEach(sel => {
+                    // Initial state is gray (from CSS)
+
+                    sel.addEventListener("change", () => updateSelectColor(sel));
+                    // Also on focus? CSS handles :focus color white. 
+                    // But on blur it goes back to gray if we don't set style.
+                    // If changed, we want it to STAY white.
+                });
+
+                // Set default quantity on submit if empty
+                const form = document.querySelector('form');
+                form.addEventListener('submit', () => {
+                    const qty = document.querySelector('input[name="quantity"]');
+                    if (!qty.value.trim()) {
+                        qty.value = "1.0";
+                    }
+                });
+            });
+        </script>
+
+        <!-- Form Footer (Left Aligned) -->
+        <div class="mt-8 flex gap-3 justify-start">
+            <button type="submit" class="btn btn-primary">
+                Save Trade
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+
+    </form>
+</div>
+<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,572 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    /* Discipline Rating */
+    .discipline-box {
+        margin-top: 20px;
+    }
+
+    .discipline-title {
+        font-size: 0.9rem;
+        color: #9ca3af;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .discipline-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    /* Stars base */
+    .stars span {
+        font-size: 1.9rem;
+        cursor: pointer;
+        color: #333;
+        transition: transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease;
+    }
+
+    .stars span:hover {
+        transform: scale(1.25);
+    }
+
+    /* Color levels */
+    .stars.level-1 .active {
+        color: #ff3d00;
+        text-shadow: 0 0 8px rgba(255, 61, 0, 0.6);
+    }
+
+    .stars.level-2 .active {
+        color: #ff9800;
+        text-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+    }
+
+    .stars.level-3 .active {
+        color: #f5c518;
+        text-shadow: 0 0 8px rgba(245, 197, 24, 0.6);
+    }
+
+    .stars.level-4 .active {
+        color: #8bc34a;
+        text-shadow: 0 0 8px rgba(139, 195, 74, 0.6);
+    }
+
+    .stars.level-5 .active {
+        color: #00e676;
+        text-shadow: 0 0 10px rgba(0, 230, 118, 0.7);
+    }
+
+    /* Result text */
+    .discipline-result {
+        font-size: 0.85rem;
+        font-weight: 600;
+        min-width: 80px;
+    }
+
+    /* Multi-Image Preview Grid */
+    .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+        margin-top: 15px;
+    }
+
+    .preview-item {
+        position: relative;
+        aspect-ratio: 16/9;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #333;
+        background: #111;
+        cursor: grab;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .preview-item:hover {
+        border-color: #3b82f6;
+    }
+
+    .preview-item.dragging {
+        opacity: 0.5;
+        border: 2px dashed #3b82f6;
+        cursor: grabbing;
+    }
+
+    .preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .preview-item .remove-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .preview-item:hover .remove-btn {
+        opacity: 1;
+    }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<header class="page-header mb-8">
+    <h1 class="page-title">Edit Trade</h1>
+</header>
+
+<div class="table-container p-8" style="max-width: 900px;">
+    <form method="POST" action="{{ url_for('edit_trade', trade_id=trade.id) }}" enctype="multipart/form-data">
+        <div class="grid grid-cols-2 gap-6 mb-6">
+
+            <!-- Col 1 -->
+            <div class="space-y-5">
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Pair</label>
+                    <input type="text" name="symbol"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                        placeholder="e.g. BTC/USD" value="{{ trade.symbol }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trading
+                        Session</label>
+                    <div class="relative">
+                        <select name="session"
+                            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
+                            <option value="" disabled>Select Session</option>
+                            <option value="Asian" {% if trade.session=='Asian' %}selected{% endif %}>Asian</option>
+                            <option value="London" {% if trade.session=='London' %}selected{% endif %}>London</option>
+                            <option value="New York" {% if trade.session=='New York' %}selected{% endif %}>New York
+                            </option>
+                            <option value="Other" {% if trade.session=='Other' %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Date
+                        Executed</label>
+                    <input type="datetime-local" name="date"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                        value="{{ trade.date.strftime('%Y-%m-%dT%H:%M') }}">
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Direction</label>
+                    <div class="relative">
+                        <select name="direction"
+                            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
+                            <option value="Long" {% if trade.direction=='Long' %}selected{% endif %}>Long</option>
+                            <option value="Short" {% if trade.direction=='Short' %}selected{% endif %}>Short</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Setup /
+                        Strategy</label>
+                    <input type="text" name="strategy"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                        placeholder="e.g. Breakout" value="{{ trade.strategy or '' }}">
+                </div>
+
+
+
+            </div>
+
+            <!-- Col 2 -->
+            <div class="space-y-5">
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Entry
+                        Price</label>
+                    <input type="number" step="any" name="entry_price"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
+                        placeholder="0.00" value="{{ trade.entry_price }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Stop Loss</label>
+                    <input type="number" step="any" name="stop_loss"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
+                        placeholder="0.00" value="{{ trade.stop_loss or '' }}">
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Take
+                        Profit</label>
+                    <input type="number" step="any" name="take_profit" id="takeProfitInput"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
+                        placeholder="0.00" value="{{ trade.take_profit or '' }}">
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Realized
+                        P&L</label>
+                    <input type="number" step="any" name="pnl"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
+                        placeholder="0.00" value="{{ trade.pnl }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Quantity /
+                        Size</label>
+                    <input type="number" step="any" name="quantity"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
+                        placeholder="1.0" value="{{ trade.quantity }}">
+                    <small class="text-gray-600 text-[10px] mt-1 block uppercase tracking-tighter">Impacts account
+                        growth calculation</small>
+                </div>
+
+                <!-- R:R Separate Box -->
+                <div id="rrDisplay"
+                    class="hidden mt-3 bg-[#0b0b0f] border border-gray-800 rounded-xl px-4 py-3 flex justify-between items-center font-mono text-xs"
+                    title="Calculated using Entry, Stop & Take Profit">
+                    <span class="text-gray-500 uppercase tracking-wider">Risk : Reward</span>
+                    <div class="text-right">
+                        <span id="rrValue" class="font-bold text-[#00ff99]"></span>
+                        {% if avg_rr %}
+                        <div class="text-[10px] text-gray-600 mt-0.5">Avg: <span class="text-gray-400">1:{{
+                                "%.2f"|format(avg_rr) }}</span></div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+
+
+        <!-- Psychology Section (Full Width) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Emotion + Discipline (SAME COLUMN) -->
+            <div class="form-group space-y-4">
+                <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                    Emotion / Mindset
+                </label>
+
+                <select name="emotion"
+                    class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
+                    <option value="Neutral" {% if trade.emotion=='Neutral' %}selected{% endif %}>Neutral
+                    </option>
+                    <option value="Greedy" {% if trade.emotion=='Greedy' %}selected{% endif %}>Greedy</option>
+                    <option value="Fearful" {% if trade.emotion=='Fearful' %}selected{% endif %}>Fearful
+                    </option>
+                    <option value="Patient" {% if trade.emotion=='Patient' %}selected{% endif %}>Patient
+                    </option>
+                    <option value="Disciplined" {% if trade.emotion=='Disciplined' %}selected{% endif %}>
+                        Disciplined</option>
+                    <option value="Impulsive" {% if trade.emotion=='Impulsive' %}selected{% endif %}>Impulsive
+                    </option>
+                </select>
+
+                <!-- Discipline Rating (MOVED HERE) -->
+                <!-- Discipline Rating (MOVED HERE) -->
+                <div class="discipline-box">
+                    <label class="discipline-title">Discipline Rating</label>
+
+                    <div class="discipline-row">
+                        <div class="stars" id="disciplineStars">
+                            <span data-value="1" class="text-2xl">★</span>
+                            <span data-value="2" class="text-2xl">★</span>
+                            <span data-value="3" class="text-2xl">★</span>
+                            <span data-value="4" class="text-2xl">★</span>
+                            <span data-value="5" class="text-2xl">★</span>
+                        </div>
+
+                        <div class="discipline-result" id="disciplineResult" style="color: #666;">
+                            Select rating
+                        </div>
+                    </div>
+
+                    <!-- Hidden input for Flask -->
+                    <input type="hidden" name="discipline" id="disciplineInput" value="{{ trade.discipline or '' }}">
+                </div>
+            </div>
+
+            <!-- Right column intentionally empty -->
+            <div></div>
+        </div>
+
+        <div class="form-group mb-6">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trade Notes &
+                Analysis</label>
+            <textarea name="notes"
+                class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all h-32"
+                placeholder="Why did you take this trade? How did you feel?">{{ trade.notes or '' }}</textarea>
+        </div>
+
+        <div class="form-group mb-8">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Screenshots &
+                Media</label>
+
+            <!-- Multi-Image Preview Container (Existing + New) -->
+            <div id="previewContainer" class="preview-grid mb-6">
+                {% for src in screenshots %}
+                <div class="preview-item" draggable="true" data-name="{{ src }}">
+                    <img src="{{ url_for('static', filename=src) if 'uploads/' in src else src }}"
+                        title="Drag to reorder | Click to enlarge" onclick="openFullscreen(this.src, this)">
+                    <div class="remove-btn" onclick="this.parentElement.remove(); updateOrder();">×</div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="bg-[#0b0b0f] border border-gray-800 rounded-xl p-6 border-dashed hover:border-gray-600 transition-colors cursor-pointer group mb-4"
+                onclick="document.getElementById('screenshotFile').click()">
+                <div class="text-center">
+                    <i data-lucide="upload-cloud"
+                        class="w-8 h-8 text-gray-600 group-hover:text-[var(--profit)] mb-2 inline-block transition-colors"></i>
+                    <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Add new files or drag & drop
+                    </p>
+                </div>
+                <input type="file" id="screenshotFile" name="screenshot" class="hidden" accept="image/*" multiple
+                    onchange="handleMultipleFiles(this)">
+            </div>
+
+            <!-- Hidden Order Persistence -->
+            <input type="hidden" name="screenshot_order" id="screenshotOrder">
+
+            <div class="flex gap-2 mt-6">
+                <input type="text" id="screenshot_url" name="screenshot_url"
+                    class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                    placeholder="Or add new image URL">
+                <button type="button"
+                    class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#222] transition-colors"
+                    style="white-space: nowrap;"
+                    onclick="const url = document.getElementById('screenshot_url').value; if(url) window.open(url, '_blank'); else alert('Please enter a URL');">
+                    Test
+                </button>
+            </div>
+        </div>
+
+        <!-- Form Footer (Left Aligned) -->
+        <div class="mt-8 flex gap-3 justify-start">
+            <button type="submit" class="btn btn-primary">
+                Update Trade
+            </button>
+            <a href="{{ url_for('journal') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+
+    </form>
+</div>
+
+<script>
+    const stars = document.querySelectorAll("#disciplineStars span");
+    const starsContainer = document.getElementById("disciplineStars");
+    const result = document.getElementById("disciplineResult");
+    const input = document.getElementById("disciplineInput");
+
+    const labels = {
+        1: "Very Poor",
+        2: "Poor",
+        3: "Average",
+        4: "Very Good",
+        5: "Excellent"
+    };
+
+    const colors = {
+        1: "#ff3d00",
+        2: "#ff9800",
+        3: "#f5c518",
+        4: "#8bc34a",
+        5: "#00e676"
+    };
+
+    function highlightStars(value) {
+        stars.forEach(star => {
+            star.classList.toggle("active", star.dataset.value <= value);
+        });
+        if (starsContainer) {
+            starsContainer.className = "stars level-" + value;
+        }
+    }
+
+    // Initialize if value exists
+    if (input && input.value) {
+        highlightStars(input.value);
+        result.textContent = labels[input.value];
+        result.style.color = colors[input.value];
+    }
+
+    stars.forEach(star => {
+        star.addEventListener("mouseover", () => {
+            highlightStars(star.dataset.value);
+        });
+
+        star.addEventListener("mouseout", () => {
+            highlightStars(input.value || 0);
+        });
+
+        star.addEventListener("click", () => {
+            const value = star.dataset.value;
+            input.value = value;
+            highlightStars(value);
+            result.textContent = labels[value];
+            result.style.color = colors[value];
+        });
+    });
+
+    // --- Multi-Image Logic ---
+    let draggedItem = null;
+
+    function handleMultipleFiles(input) {
+        const files = Array.from(input.files);
+        const container = document.getElementById("previewContainer");
+
+        files.forEach((file, index) => {
+            if (!file.type.startsWith("image/")) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const div = document.createElement("div");
+                div.className = "preview-item";
+                div.draggable = true;
+                div.dataset.name = file.name;
+
+                const img = document.createElement("img");
+                img.src = e.target.result;
+                img.title = "Drag to reorder | Click to enlarge";
+                img.onclick = () => openFullscreen(e.target.result, img);
+
+                const removeBtn = document.createElement("div");
+                removeBtn.className = "remove-btn";
+                removeBtn.innerHTML = "×";
+                removeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    div.remove();
+                    updateOrder();
+                };
+
+                div.appendChild(img);
+                div.appendChild(removeBtn);
+                container.appendChild(div);
+
+                setupDragEvents(div);
+                updateOrder();
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function setupDragEvents(item) {
+        item.addEventListener("dragstart", () => {
+            draggedItem = item;
+            item.classList.add("dragging");
+        });
+
+        item.addEventListener("dragend", () => {
+            draggedItem = null;
+            item.classList.remove("dragging");
+            updateOrder();
+        });
+
+        const container = document.getElementById("previewContainer");
+        container.addEventListener("dragover", e => {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(container, e.clientX);
+            if (afterElement == null) {
+                container.appendChild(draggedItem);
+            } else {
+                container.insertBefore(draggedItem, afterElement);
+            }
+        });
+    }
+
+    function getDragAfterElement(container, x) {
+        const draggableElements = [...container.querySelectorAll(".preview-item:not(.dragging)")];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = x - box.left - box.width / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    function updateOrder() {
+        const order = [...document.querySelectorAll(".preview-item")].map(el => el.dataset.name);
+        const orderInput = document.getElementById("screenshotOrder");
+        if (orderInput) {
+            orderInput.value = JSON.stringify(order);
+        }
+    }
+
+    // Initialize existing items
+    document.querySelectorAll(".preview-item").forEach(item => setupDragEvents(item));
+</script>
+
+<script>
+    // R:R Calculation Logic for Edit Page
+    document.addEventListener('DOMContentLoaded', function () {
+        const entryInput = document.querySelector('input[name="entry_price"]');
+        const stopInput = document.querySelector('input[name="stop_loss"]');
+        const tpInput = document.getElementById('takeProfitInput');
+        const dirInput = document.querySelector('select[name="direction"]');
+        const rrDisplay = document.getElementById('rrDisplay');
+        const rrValue = document.getElementById('rrValue');
+
+        function calculateRR() {
+            const entry = parseFloat(entryInput.value);
+            const stop = parseFloat(stopInput.value);
+            const tp = parseFloat(tpInput.value);
+            const direction = dirInput.value;
+
+            if (!entry || !stop || !tp) {
+                rrDisplay.classList.add('hidden');
+                return;
+            }
+
+            let risk, reward;
+
+            if (direction === "Long") {
+                risk = entry - stop;
+                reward = tp - entry;
+            } else {
+                risk = stop - entry;
+                reward = entry - tp;
+            }
+
+            if (risk <= 0 || reward <= 0) {
+                rrDisplay.classList.add('hidden');
+                return;
+            }
+
+            const ratio = (reward / risk).toFixed(2);
+            rrValue.textContent = `1:${ratio}`;
+            rrDisplay.classList.remove('hidden');
+
+            // Color Logic
+            rrValue.className = "font-bold " + (ratio >= 3 ? "text-[#00ff99]" : ratio >= 2 ? "text-yellow-400" : "text-red-400");
+        }
+
+        [entryInput, stopInput, tpInput, dirInput].forEach(input => {
+            if (input) input.addEventListener('input', calculateRR);
+            if (input) input.addEventListener('change', calculateRR);
+        });
+
+        // Initial calc
+        calculateRR();
+    });
+</script>
+
+<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
+{% endblock %}

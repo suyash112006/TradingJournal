@@ -1,0 +1,213 @@
+/* Components */
+
+/* Cards */
+
+body {
+    background: red;
+}
+
+
+.card {
+    background-color: var(--bg-surface);
+    border-radius: 8px;
+    padding: var(--spacing-lg);
+    border: 1px solid var(--border-card);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card-title {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: var(--spacing-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.card-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.card-trend {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85rem;
+    margin-left: 8px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.card-trend.up {
+    background: rgba(0, 227, 150, 0.1);
+    color: var(--color-success);
+}
+
+.card-trend.down {
+    background: rgba(255, 69, 96, 0.1);
+    color: var(--color-danger);
+}
+
+/* Tables */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    padding: 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table th {
+    background-color: rgba(255, 255, 255, 0.02);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+}
+
+.table tr:hover td {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Forms */
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 1rem;
+    transition: all 0.25s ease;
+}
+
+.form-control:hover {
+    background: var(--bg-hover);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: var(--bg-hover);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* Override browser autofill white background */
+.form-control:-webkit-autofill,
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus,
+.form-control:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--bg-card) inset !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+    border-color: var(--primary) !important;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+.form-control:autofill {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+}
+
+textarea.form-control {
+    resize: vertical;
+    min-height: 100px;
+}
+
+/* Badges */
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-win {
+    background: rgba(0, 227, 150, 0.15);
+    color: var(--color-success);
+}
+
+.badge-loss {
+    background: rgba(255, 69, 96, 0.15);
+    color: var(--color-danger);
+}
+
+.badge-long {
+    background: rgba(46, 147, 250, 0.15);
+    color: var(--color-primary);
+}
+
+.badge-short {
+    background: rgba(254, 176, 25, 0.15);
+    color: var(--color-warning);
+}
+
+/* ================================
+   Log New Trade – Input Styling
+   ================================ */
+
+/* All input boxes & small cards */
+
+
+.form-input,
+input,
+select,
+textarea {
+    background-color: #0b0b0f;
+    /* dark background */
+    color: #9ca3af;
+    /* medium gray default */
+    border: 1px solid #1f2937;
+}
+
+/* Placeholder text */
+.form-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+    color: #6b7280;
+    /* darker gray for placeholders */
+}
+
+/* Default select & preset values */
+select,
+option {
+    color: #9ca3af;
+    background-color: #0b0b0f;
+}
+
+/* When user interacts or has value */
+.form-input:focus,
+input:focus,
+textarea:focus,
+select:focus {
+    color: #E0E0E0;
+    outline: none;
+}
+
+/* Filled Inputs (except date which works differently) */
+.form-input:not(:placeholder-shown),
+input:not(:placeholder-shown),
+textarea:not(:placeholder-shown) {
+    color: #E0E0E0;
+}

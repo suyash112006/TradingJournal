@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="mb-8">
+    <h1 class="text-3xl font-bold">Trading Tasks</h1>
+</header>
+
+<div class="max-w-3xl">
+
+    <!-- Add Task -->
+    <div class="bg-[#0a0a0a] rounded-2xl p-6 border border-gray-800 mb-6">
+        <form method="POST" class="flex gap-4">
+            <input type="text" name="content"
+                class="flex-1 bg-[#111] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-gray-600"
+                placeholder="Add a new task..." required>
+            <button type="submit"
+                class="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">Add
+                Task</button>
+        </form>
+    </div>
+
+    <!-- Task List -->
+    {% for task in tasks %}
+    <div
+        class="flex items-center p-4 bg-[#0a0a0a] border border-gray-800 rounded-xl mb-3 hover:border-gray-600 transition-colors group">
+
+        <a href="{{ url_for('complete_task', task_id=task.id) }}"
+            class="text-xl mr-4 hover:scale-110 transition-transform">
+            {% if task.is_completed %}✅{% else %}⬜{% endif %}
+        </a>
+
+        <div class="flex-1">
+            <div class="{% if task.is_completed %}line-through text-gray-500{% else %}text-gray-200{% endif %}">
+                {{ task.content }}
+            </div>
+            <div class="text-xs text-gray-600 mt-1">
+                {{ task.created_at.strftime('%b %d, %H:%M') }}
+            </div>
+        </div>
+
+        <a href="{{ url_for('delete_task', task_id=task.id) }}"
+            class="text-gray-600 hover:text-red-500 text-xl px-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            &times;
+        </a>
+    </div>
+    {% else %}
+    <div class="text-center py-12 text-gray-500">
+        <p class="text-lg mb-2">No tasks yet.</p>
+        <p class="text-sm">Add your first trading task above.</p>
+    </div>
+    {% endfor %}
+
+</div>
+{% endblock %}

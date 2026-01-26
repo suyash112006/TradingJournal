@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="mb-8">
+    <h1 class="text-3xl font-bold">Import Trades</h1>
+</header>
+
+<div class="bg-[#0a0a0a] rounded-2xl p-6 border border-gray-800 max-w-xl animate-box">
+    <h3 class="text-xl font-bold mb-2">Upload CSV File</h3>
+    <p class="text-gray-500 mb-6 text-sm leading-relaxed">
+        Bulk upload your trades using a CSV file. <br>
+        Expected format: <code
+            class="bg-[#111] px-1 py-0.5 rounded text-gray-300">Date, Symbol, Direction, Quantity, Entry, Exit</code>
+    </p>
+
+    <form action="{{ url_for('import_trades') }}" method="POST" enctype="multipart/form-data">
+        <div class="mb-6">
+            <label class="block text-sm text-gray-500 mb-2">Select File</label>
+            <input type="file" name="file" accept=".csv"
+                class="w-full bg-[#111] border border-gray-800 rounded-lg p-2 text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition-colors"
+                required>
+        </div>
+
+        <div>
+            <button type="submit"
+                class="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors width-full sm:width-auto">Upload
+                & Import</button>
+        </div>
+    </form>
+</div>
+
+<div class="bg-[#0a0a0a] rounded-2xl p-6 border border-gray-800 max-w-xl mt-6 animate-box"
+    style="animation-delay: 0.1s;">
+    <h4 class="text-lg font-bold mb-4">CSV Format Example</h4>
+    <pre class="bg-[#111] p-4 rounded-lg text-sm text-gray-300 overflow-x-auto border border-gray-800">Date,Symbol,Direction,Quantity,Entry,Exit
+2023-10-27T10:30,BTC/USD,Long,0.5,34000,35000
+2023-10-28T14:15,ETH/USD,Short,2.0,1800,1750</pre>
+</div>
+{% endblock %}

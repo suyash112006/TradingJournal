@@ -1,0 +1,1235 @@
+:root {
+    /* Backgrounds */
+    --bg-main: #0b0b0f;
+    --bg-card: #111114;
+    --bg-glass: rgba(17, 17, 20, 0.6);
+
+    /* Borders */
+    --border-default: #1f1f23;
+    --border-glow: rgba(255, 255, 255, 0.08);
+
+    /* Text */
+    --text-primary: #ffffff;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+
+    /* Status */
+    --profit: #00ff99;
+    --loss: #ef4444;
+    --profit-green: #00fa9a;
+    --loss-red: #ff3b3b;
+    --accent: #3b82f6;
+    --warning: #f59e0b;
+
+    /* Spacing Scale */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+
+    /* Typography */
+    --font-main: "Inter", system-ui;
+    --font-numbers: "JetBrains Mono", monospace;
+
+    /* Global Radius */
+    --radius-card: 16px;
+    --radius-sm: 8px;
+
+    /* Global Card Borders */
+    --border-card: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(255, 255, 255, 0.14);
+    --border-strong: rgba(255, 255, 255, 0.2);
+
+    /* Easing */
+    --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Dashboard Specific */
+    --bg-card-top: #111827;
+    --bg-hover: rgba(255, 255, 255, 0.03);
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    line-height: 1.5;
+    margin: 0;
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum", "zero";
+}
+
+.app-container {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar styles removed - managed by base.html */
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    margin-left: 0;
+    /* Managed by layout padding on desktop if sidebar is relative */
+    padding: var(--space-xl);
+    max-width: 1600px;
+    height: 100vh;
+    overflow-y: auto;
+}
+
+.page-header {
+    margin-bottom: var(--space-xl);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.page-title {
+    font-size: 22px;
+    font-weight: 600;
+}
+
+/* Metric Cards */
+.metric-card {
+    /* Glassmorphism Update */
+    background: rgba(11, 15, 20, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    padding: var(--space-lg);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-hover);
+    background: var(--bg-hover);
+}
+
+.metric-card.profit-glow {
+    box-shadow: 0 0 30px rgba(0, 255, 153, 0.05);
+}
+
+/* Progress Bars */
+.progress-container {
+    height: 6px;
+    border-radius: 999px;
+    background: #1a1a1f;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.8s ease-out;
+}
+
+/* Tables */
+.table-container {
+    /* Glassmorphism Update */
+    background: rgba(11, 15, 20, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+}
+
+.custom-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.custom-table tr {
+    height: 44px;
+    border-bottom: 1px solid var(--border-default);
+    transition: background 0.15s ease;
+}
+
+.custom-table tr:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.custom-table th {
+    text-align: left;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: var(--space-md);
+    font-weight: 600;
+}
+
+.custom-table td {
+    padding: var(--space-md);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+/* Micro-interactions */
+button,
+.btn,
+.day-card {
+    transition: transform 0.1s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+button:active,
+.btn:active,
+.day-card:active {
+    transform: scale(0.96);
+}
+
+/* Prop-Firm Calendar */
+.calendar-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.month-total {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--font-numbers);
+}
+
+.month-total.profit {
+    color: var(--profit);
+}
+
+.month-total.loss {
+    color: var(--loss);
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+}
+
+.calendar-weekday {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    padding-bottom: 4px;
+}
+
+.day-card {
+    aspect-ratio: 1;
+    background: #0d0d10;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    padding: 8px;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.day-card:hover {
+    background: #15151a;
+    border-color: var(--border-hover);
+}
+
+.day-card.other-month {
+    opacity: 0.15;
+    cursor: default;
+    pointer-events: none;
+}
+
+.day-num {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.day-pnl {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-numbers);
+    text-align: right;
+}
+
+.day-pnl.profit {
+    color: var(--profit);
+}
+
+.day-pnl.loss {
+    color: var(--loss);
+}
+
+.breach-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 6px;
+    height: 6px;
+    background: var(--loss);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--loss);
+    animation: pulse-red 2s infinite;
+}
+
+/* Discipline Rating */
+.stars-display {
+    display: flex;
+    gap: 4px;
+}
+
+.stars-display .star {
+    font-size: 20px;
+    color: #1f2937;
+    /* inactive */
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.stars-display .star.active {
+    color: var(--profit);
+    text-shadow: 0 0 8px rgba(0, 255, 153, 0.4);
+}
+
+.discipline-badge {
+    font-family: var(--font-numbers);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    text-align: center;
+    min-width: 40px;
+}
+
+.discipline-badge.level-5 {
+    background: rgba(0, 255, 153, 0.1);
+    color: var(--profit);
+    border: 1px solid rgba(0, 255, 153, 0.2);
+}
+
+.discipline-badge.level-4 {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.discipline-badge.level-3 {
+    background: rgba(250, 204, 21, 0.1);
+    color: #facc15;
+    border: 1px solid rgba(250, 204, 21, 0.2);
+}
+
+.discipline-badge.level-2 {
+    background: rgba(251, 113, 133, 0.1);
+    color: #fb7185;
+    border: 1px solid rgba(251, 113, 133, 0.2);
+}
+
+.discipline-badge.level-1 {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--loss);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.discipline-badge.level-0 {
+    background: #111;
+    color: #444;
+    border: 1px solid #222;
+}
+
+/* Trader-Grade Currency Styles (Slashed Zero + Tabular) */
+.money {
+    font-family: var(--font-main);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum", "zero";
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    display: inline-block;
+}
+
+.money.profit {
+    color: #00ff99;
+}
+
+.money.loss {
+    color: #ef4444;
+}
+
+/* Net Profit dynamic card styling (Style A - Breathing Outline) */
+.profit-card {
+    border: 1px solid var(--border-default);
+    transition: border 0.3s ease, box-shadow 0.3s ease, color 0.3s ease;
+}
+
+/* PROFIT: Breathing Green Outline */
+.profit-card.profit-outline {
+    border: 1px solid #00ff99 !important;
+    animation: greenPulse 2.8s ease-in-out infinite;
+}
+
+.profit-card.profit-outline .money {
+    color: #00ff99 !important;
+}
+
+/* LOSS: Breathing Red Outline */
+.profit-card.loss-outline {
+    border: 1px solid #ef4444 !important;
+    animation: redPulse 3.2s ease-in-out infinite;
+}
+
+.profit-card.loss-outline .money {
+    color: #ef4444 !important;
+}
+
+/* Glow effect animation */
+@keyframes greenPulse {
+    0% {
+        box-shadow: 0 0 0 rgba(0, 255, 153, 0.15), inset 0 0 0 rgba(0, 255, 153, 0.15);
+        border-color: rgba(0, 255, 153, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 0 18px rgba(0, 255, 153, 0.45), inset 0 0 6px rgba(0, 255, 153, 0.25);
+        border-color: rgba(0, 255, 153, 1);
+    }
+
+    100% {
+        box-shadow: 0 0 0 rgba(0, 255, 153, 0.15), inset 0 0 0 rgba(0, 255, 153, 0.15);
+        border-color: rgba(0, 255, 153, 0.5);
+    }
+}
+
+@keyframes redPulse {
+    0% {
+        box-shadow: 0 0 0 rgba(239, 68, 68, 0.25), inset 0 0 0 rgba(239, 68, 68, 0.25);
+        border-color: rgba(239, 68, 68, 0.6);
+    }
+
+    50% {
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.65), inset 0 0 10px rgba(239, 68, 68, 0.35);
+        border-color: rgba(239, 68, 68, 1);
+    }
+
+    100% {
+        box-shadow: 0 0 0 rgba(239, 68, 68, 0.25), inset 0 0 0 rgba(239, 68, 68, 0.25);
+        border-color: rgba(239, 68, 68, 0.6);
+    }
+}
+
+/* Color Utilities */
+.text-green-400 {
+    color: #4ade80;
+}
+
+.text-blue-400 {
+    color: #60a5fa;
+}
+
+.text-yellow-400 {
+    color: #facc15;
+}
+
+.text-orange-400 {
+    color: #fb923c;
+}
+
+.text-red-500 {
+    color: #ef4444;
+}
+
+.text-gray-500 {
+    color: #6b7280;
+}
+
+.text-white {
+    color: #ffffff !important;
+}
+
+.text-lg {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+}
+
+.text-xl {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+}
+
+.text-2xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+}
+
+.text-white {
+    color: #ffffff !important;
+}
+
+.text-lg {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+}
+
+.text-xl {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+}
+
+.text-2xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+}
+
+
+@keyframes pulse-red {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+.trade-count-badge {
+    font-size: 9px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    align-self: flex-start;
+}
+
+/* Analytics Performance Tables */
+.performance-card {
+    padding: var(--space-xl);
+    /* Glassmorphism Update */
+    background: rgba(11, 15, 20, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    height: 100%;
+}
+
+.performance-card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.perf-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.perf-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--border-default);
+}
+
+.perf-table td {
+    padding: var(--space-md) 0;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.pnl {
+    font-family: var(--font-main);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum", "zero";
+    font-weight: 700;
+}
+
+.pnl.profit {
+    color: var(--profit);
+}
+
+.pnl.loss {
+    color: var(--loss);
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        padding: var(--space-md);
+        margin-top: 64px;
+        /* Mobile header height */
+    }
+
+    .metric-card {
+        padding: var(--space-md);
+    }
+}
+
+/* Premium Button System */
+.btn {
+    height: 44px;
+    padding: 0 24px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    border: none;
+}
+
+/* PRIMARY – Save/Action */
+.btn-primary {
+    background: #00ff99 !important;
+    color: #000 !important;
+    box-shadow:
+        0 0 20px rgba(0, 255, 153, 0.3),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 0 28px rgba(0, 255, 153, 0.5),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+        0 0 10px rgba(0, 255, 153, 0.2);
+    /* Enhanced hover glow */
+    background: #05ff9e !important;
+}
+
+.btn-primary:active {
+    transform: scale(0.97);
+}
+
+/* SECONDARY – Cancel/Quiet */
+.btn-secondary {
+    background: linear-gradient(180deg, #1a1d22, #14161a) !important;
+    color: #9ca3af !important;
+    border: 1px solid #2a2f36 !important;
+}
+
+.btn-secondary:hover {
+    background: #1f2329 !important;
+    border-color: #3b82f6 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-secondary:active {
+    transform: scale(0.97);
+}
+
+@media (max-width: 640px) {
+    .btn {
+        flex: 1;
+        padding: 0 16px;
+    }
+}
+
+/* Journal Action Buttons */
+.action-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: 1px solid #2a2a2a;
+    background: #121212;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    background: #1f1f1f;
+    color: #fff;
+    border-color: #444;
+}
+
+.action-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Dashboard Overview Cards Layout */
+.overview-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    /* Glassmorphism Update */
+    background: rgba(11, 15, 20, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+
+    border-radius: var(--radius-card);
+    padding: 20px 22px;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    /* Exact border: rgba(255, 255, 255, 0.08) */
+    border: 1px solid var(--border-card);
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-hover);
+    background: var(--bg-hover);
+}
+
+.stat-card.highlight {
+    border: 1px solid rgba(34, 197, 94, 0.6) !important;
+    box-shadow: 0 0 18px rgba(34, 197, 94, 0.25);
+}
+
+.stat-card.highlight.loss-outline {
+    border-color: rgba(239, 68, 68, 0.6) !important;
+    box-shadow: 0 0 18px rgba(239, 68, 68, 0.25);
+}
+
+@media (max-width: 900px) {
+    .overview-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.card-header-styled {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.card-header-styled h4 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.notes-pro {
+    border-radius: var(--radius-card);
+}
+
+/* Form Elements */
+.form-input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+/* CALENDAR PRO UPGRADE */
+.calendar-card {
+    /* Glassmorphism Update */
+    background: rgba(11, 15, 20, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 24px;
+}
+
+/* Header */
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.calendar-header h3 {
+    font-size: 0.85rem;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    margin: 0;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.month-pnl {
+    display: block;
+    margin-top: 6px;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #22C55E;
+}
+
+.month-pnl.loss {
+    color: var(--loss);
+}
+
+.calendar-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Weekdays */
+.calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 12px;
+}
+
+.calendar-weekdays span {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    font-weight: 600;
+}
+
+/* Grid */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 16px;
+}
+
+/* Base Day Card */
+.day {
+    height: 120px;
+    background: linear-gradient(180deg, #141619, #0B0F14);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 12px;
+    position: relative;
+    transition: all 0.25s ease;
+    cursor: pointer;
+}
+
+/* Hover Animation */
+.day:hover {
+    transform: translateY(-4px) scale(1.02);
+    border-color: rgba(255, 255, 255, 0.14);
+    background: linear-gradient(180deg, #1d2026, #11141a);
+    z-index: 10;
+}
+
+/* Date Number (Top-Right, Clean) */
+.day .date {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 0.75rem;
+    color: #9CA3AF;
+    font-weight: 600;
+}
+
+/* Trades Text */
+.day .trades {
+    position: absolute;
+    bottom: 12px;
+    left: 14px;
+    font-size: 0.7rem;
+    color: #9CA3AF;
+}
+
+/* Amount Text */
+.amount {
+    position: absolute;
+    bottom: 32px;
+    left: 14px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    font-family: var(--font-numbers);
+}
+
+.amount.positive {
+    color: #22C55E;
+}
+
+.amount.negative {
+    color: var(--loss);
+}
+
+/* Outline + Glow Animation */
+/* Profit Day */
+.day.profit {
+    border-width: 2px;
+    border-color: rgba(34, 197, 94, 1);
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.15), inset 0 0 10px rgba(34, 197, 94, 0.1);
+}
+
+/* Loss Day */
+.day.loss {
+    border-width: 2px;
+    border-color: rgba(239, 68, 68, 1);
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.15), inset 0 0 10px rgba(239, 68, 68, 0.1);
+}
+
+/* Active Glow Pulse (Optional but Premium) */
+@keyframes glowPulseGreen {
+    0% {
+        box-shadow: 0 0 0 rgba(34, 197, 94, 0.0);
+    }
+
+    50% {
+        box-shadow: 0 0 18px rgba(34, 197, 94, 0.35);
+    }
+
+    100% {
+        box-shadow: 0 0 0 rgba(34, 197, 94, 0.0);
+    }
+}
+
+.day.profit.active {
+    animation: glowPulseGreen 2.5s infinite;
+}
+
+/* Muted / Other Month */
+.day.other-month {
+    opacity: 0.2;
+    cursor: default;
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ENTRANCE ANIMATIONS */
+@keyframes fadeInUp {
+    0% {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Apply to Dashboard Cards */
+.stat-card,
+.calendar-card,
+.performance-card,
+.metric-card {
+    animation: fadeInUp 0.6s var(--ease-premium) backwards;
+}
+
+/* Stagger Delays */
+.stat-card:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.stat-card:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.stat-card:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.calendar-card {
+    animation-delay: 0.4s;
+}
+
+/* Calendar Day Ripples */
+.day {
+    animation: fadeInUp 0.5s var(--ease-premium) backwards;
+}
+
+.day:nth-child(n) {
+    animation-delay: calc(0.3s + (var(--i, 0) * 0.02s));
+}
+
+/* 🔴 Logout Button (Red Click-Only) - Aligned */
+.logout-btn {
+    width: 100%;
+    height: 44px;
+    background: rgba(30, 30, 30, 0.55);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: all 0.25s var(--ease-premium);
+}
+
+.logout-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+}
+
+/* Ripple */
+.logout-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* Using var(--loss) for the red glow effect */
+    background: radial-gradient(circle at center,
+            rgba(239, 68, 68, 0.45) 0%,
+            rgba(239, 68, 68, 0.2) 30%,
+            transparent 70%);
+    opacity: 0;
+    transform: scale(0.6);
+    pointer-events: none;
+}
+
+.logout-btn:active::before {
+    animation: logoutRippleRed 1.2s var(--ease-premium) forwards;
+}
+
+@keyframes logoutRippleRed {
+    0% {
+        opacity: 0.6;
+        transform: scale(0.4);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(2.8);
+    }
+}
+
+/* Sweep */
+.logout-btn::after {
+    content: "";
+    position: absolute;
+    inset: -40% -60%;
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(239, 68, 68, 0.15) 45%,
+            rgba(239, 68, 68, 0.35) 50%,
+            rgba(239, 68, 68, 0.15) 55%,
+            transparent 100%);
+    transform: translateX(-140%) skewX(-12deg);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.logout-btn:active::after {
+    opacity: 1;
+    animation: logoutSweepRed 1.4s var(--ease-premium);
+}
+
+@keyframes logoutSweepRed {
+    from {
+        transform: translateX(-140%) skewX(-12deg);
+    }
+
+    to {
+        transform: translateX(140%) skewX(-12deg);
+    }
+}
+
+/* Text Feedback */
+.logout-text {
+    transition: transform 0.1s var(--ease-premium);
+    display: inline-block;
+    font-weight: 500;
+}
+
+.logout-btn:active .logout-text {
+    transform: scale(0.96);
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+}
+
+/* Exit Animation */
+.logout-btn.exit {
+    animation: logoutExit 0.5s var(--ease-premium) forwards;
+}
+
+@keyframes logoutExit {
+    to {
+        opacity: 0;
+        transform: translateX(-20px) scale(0.95);
+    }
+}
+
+/* PROFIT/LOSS CANDLE ANIMATION */
+.profit-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 28px;
+    min-width: 180px;
+    pointer-events: none;
+}
+
+.profit-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    height: 70px;
+}
+
+.profit-bars span {
+    width: 8px;
+    height: 0;
+    border-radius: 4px;
+    transition: height 1.2s ease-out;
+}
+
+/* PROFIT */
+.profit-bars:not(.loss) span {
+    background: linear-gradient(180deg, #00ff9d, #00c67c);
+}
+
+/* LOSS (Staircase Pattern - Bottom Up) */
+.profit-bars.loss span {
+    background: linear-gradient(180deg, #ff5c5c, #c92a2a);
+}
+
+
+/* Animation keyframes removed - now JS driven */
+
+/* LOSS (DOWN) */
+.profit-down {
+    color: var(--loss-red);
+}
+
+.profit-down #bars rect {
+    fill: var(--loss-red);
+    transform-origin: top;
+    animation: barGrowDown 0.8s ease-out forwards;
+}
+
+.profit-down #profitLine {
+    stroke: var(--loss-red);
+    animation: drawLine 1s ease-out forwards, glowRed 2s infinite alternate;
+    filter: drop-shadow(0 0 6px rgba(255, 59, 59, 0.8));
+}
+
+/* BAR STAGGER */
+#bars rect:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+#bars rect:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+#bars rect:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+#bars rect:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+#bars rect:nth-child(5) {
+    animation-delay: 0.25s;
+}
+
+#bars rect:nth-child(6) {
+    animation-delay: 0.3s;
+}
+
+#bars rect:nth-child(7) {
+    animation-delay: 0.35s;
+}
+
+/* KEYFRAMES */
+@keyframes barGrowUp {
+    to {
+        transform: scaleY(1);
+    }
+}
+
+@keyframes barGrowDown {
+    to {
+        transform: scaleY(1);
+    }
+}
+
+@keyframes drawLine {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes lineFloatUp {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(-2px);
+    }
+}
+
+@keyframes glowGreen {
+    from {
+        filter: drop-shadow(0 0 4px rgba(0, 250, 154, 0.4));
+    }
+
+    to {
+        filter: drop-shadow(0 0 10px rgba(0, 250, 154, 1));
+    }
+}
+
+@keyframes glowRed {
+    from {
+        filter: drop-shadow(0 0 4px rgba(255, 59, 59, 0.4));
+    }
+
+    to {
+        filter: drop-shadow(0 0 10px rgba(255, 59, 59, 1));
+    }
+}
