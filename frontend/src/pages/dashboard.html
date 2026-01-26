@@ -1,0 +1,669 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    /* Dashboard specific overrides if needed */
+    .metric-value {
+        font-family: var(--font-numbers);
+        font-size: 28px;
+        font-weight: 700;
+    }
+
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-badge.active,
+    .status-badge.reached,
+    .status-badge.safe {
+        background: rgba(0, 255, 153, 0.1);
+        color: var(--profit);
+        border: 1px solid rgba(0, 255, 153, 0.2);
+    }
+
+    .status-badge.breached {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--loss);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    /* Discipline Styles - Muted as section removed from dashboard */
+
+    /* Emotion Meter Styles */
+    .emotion-card {
+        background: #0b0b0f;
+        border: 1px solid #1a1a1f;
+        border-radius: 16px;
+        padding: 16px;
+        margin-top: 16px;
+    }
+
+    .emotion-title {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #4b5563;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 12px;
+    }
+
+    .emotion-value {
+        font-size: 24px;
+        font-weight: 800;
+        margin-bottom: 4px;
+        font-family: var(--font-numbers);
+    }
+
+    .emotion-label {
+        font-size: 0.7rem;
+        color: #6b7280;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+
+    .emotion-positive {
+        color: #00e676;
+        text-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
+    }
+
+    .emotion-neutral {
+        color: #f5c518;
+        text-shadow: 0 0 10px rgba(245, 197, 24, 0.2);
+    }
+
+    .emotion-negative {
+        color: #ff3d00;
+        text-shadow: 0 0 10px rgba(255, 61, 0, 0.2);
+    }
+
+    .edit-quiet-btn {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: #0b0b0f;
+        border: 1px solid #1f1f23;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.2s;
+        cursor: pointer;
+        z-index: 10;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .edit-quiet-btn:hover {
+        color: #fff;
+        border-color: #3b82f6;
+        background: #16161a;
+    }
+
+    .metric-card {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .wallet-card {
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+    <h1 class="page-title">Overview</h1>
+</div>
+
+<!-- Top Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <!-- Wallet Balance -->
+    <div class="metric-card wallet-card">
+        <button class="edit-quiet-btn" onclick="toggleEditAccount()" title="Edit Balance">
+            <i data-lucide="edit-3" class="w-3 h-3"></i>
+            <span>Edit</span>
+        </button>
+
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                <i data-lucide="wallet" class="w-5 h-5"></i>
+            </div>
+            <div class="text-gray-400 text-xs uppercase font-semibold tracking-wider">Wallet Balance</div>
+        </div>
+
+        <div class="money" style="font-size: 28px;">{{ stats.current_balance | format_currency }}</div>
+        <div class="text-gray-500 text-xs mt-2">Total Equity</div>
+
+        <!-- Hidden Edit Form -->
+        <div id="editAccountForm"
+            style="display:none; margin-top:15px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
+            <form action="{{ url_for('update_account') }}" method="POST" class="flex gap-2">
+                <input type="number" name="initial_balance"
+                    class="bg-[#0b0b0f] border border-gray-800 text-white p-2 rounded-lg w-full text-sm outline-none focus:border-gray-600"
+                    placeholder="New Balance">
+                <button type="submit"
+                    class="bg-green-500/10 text-green-400 border border-green-500/20 px-3 py-1.5 rounded-lg hover:bg-green-500/20 text-xs font-bold">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Net Profit -->
+    <div class="metric-card profit-card" id="netProfitCard" data-value="{{ stats.net_profit }}">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center text-green-400">
+                <i data-lucide="line-chart" class="w-5 h-5"></i>
+            </div>
+            <div class="text-gray-400 text-xs uppercase font-semibold tracking-wider">Net Profit</div>
+        </div>
+        <div class="money {{ 'profit' if stats.net_profit >= 0 else 'loss' }}" style="font-size: 28px;"
+            id="netProfitValue">
+            {{ "+" if stats.net_profit > 0 else "" }}{{ stats.net_profit | format_currency }}
+        </div>
+        <div class="text-gray-500 text-xs mt-2">All Time P&L</div>
+
+        <!-- Animated Chart -->
+        <div class="profit-right">
+            <div class="profit-bars">
+                <span data-height="20"></span>
+                <span data-height="40"></span>
+                <span data-height="60"></span>
+                <span data-height="80"></span>
+                <span data-height="100"></span>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                const profitValue = {{ stats.net_profit | default (0)
+            }};
+            const rightBox = document.querySelector('#netProfitCard .profit-right');
+            const barsContainer = rightBox.querySelector('.profit-bars');
+            const candles = barsContainer.querySelectorAll('span');
+
+            // Color/Mode Setup
+            let isLoss = false;
+            if (profitValue < 0) {
+                rightBox.classList.add('loss');
+                rightBox.classList.remove('profit');
+                barsContainer.classList.add('loss');
+                isLoss = true;
+            } else {
+                rightBox.classList.add('profit');
+                rightBox.classList.remove('loss');
+                barsContainer.classList.remove('loss');
+            }
+
+            // Animation removed as per user request
+            }) ();
+        </script>
+    </div>
+
+    <!-- Win Rate -->
+    <div class="metric-card">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-400">
+                <i data-lucide="activity" class="w-5 h-5"></i>
+            </div>
+            <div class="text-gray-400 text-xs uppercase font-semibold tracking-wider">Win Rate</div>
+        </div>
+        <div class="metric-value">{{ stats.win_rate }}%</div>
+        <div class="text-gray-500 text-xs mt-2">{{ stats.total_trades }} Total Trades</div>
+    </div>
+</div>
+
+<!-- Performance Chart -->
+<div class="mb-8">
+    <div class="metric-card">
+        <div class="flex justify-between mb-5">
+            <h3 class="text-lg font-semibold m-0">Performance Curve</h3>
+            <div class="flex gap-2" id="chartFilters">
+                <button onclick="applyChartFilter('day', this)"
+                    class="filter-btn bg-[#1a1a1a] text-gray-400 border border-gray-800 px-3 py-1 rounded-full text-xs font-semibold hover:bg-gray-800 hover:text-white transition-all">Day</button>
+                <button onclick="applyChartFilter('week', this)"
+                    class="filter-btn bg-[#1a1a1a] text-gray-400 border border-gray-800 px-3 py-1 rounded-full text-xs font-semibold hover:bg-gray-800 hover:text-white transition-all">Week</button>
+                <button onclick="applyChartFilter('month', this)"
+                    class="filter-btn bg-[#1a1a1a] text-gray-400 border border-gray-800 px-3 py-1 rounded-full text-xs font-semibold hover:bg-gray-800 hover:text-white transition-all">Month</button>
+                <button onclick="applyChartFilter('all', this)"
+                    class="filter-btn bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-full text-xs font-semibold active">All
+                    Time</button>
+            </div>
+        </div>
+        <div class="w-full h-[350px]">
+            <canvas id="equityChart" data-labels='{{ equity_labels | tojson }}'
+                data-values='{{ equity_data | tojson }}'></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Bottom Section: Trades & Goals -->
+<div class="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
+    <!-- Left: Performance Calendar -->
+    <div class="metric-card">
+        <div class="calendar-section">
+            <div class="calendar-header">
+                <div>
+                    <h3 class="text-xl font-bold uppercase tracking-widest text-white mb-1">
+                        <span id="calendarMonthTitle">Month Year</span> Performance
+                    </h3>
+                    <div id="monthlyPnlValue" class="money" style="font-size: 28px;">$0.00</div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button onclick="changeMonth(-1)"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-800 hover:bg-gray-800 text-gray-400">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="changeMonth(1)"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-800 hover:bg-gray-800 text-gray-400">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dynamic Calendar Grid -->
+            <div id="calendarGrid" class="calendar-grid">
+                <!-- Days generated by JS -->
+            </div>
+
+            <script>
+                // State
+                let currentDate = new Date();
+                let curMonth = currentDate.getMonth() + 1; // 1-12
+                let curYear = currentDate.getFullYear();
+
+                // Init
+                document.addEventListener('DOMContentLoaded', () => {
+                    renderCalendar(curMonth, curYear);
+                });
+
+                async function changeMonth(step) {
+                    curMonth += step;
+                    if (curMonth > 12) {
+                        curMonth = 1;
+                        curYear++;
+                    } else if (curMonth < 1) {
+                        curMonth = 12;
+                        curYear--;
+                    }
+                    await renderCalendar(curMonth, curYear);
+                }
+
+                async function renderCalendar(month, year) {
+                    const grid = document.getElementById('calendarGrid');
+                    const title = document.getElementById('calendarMonthTitle');
+                    const monthlyPnlEl = document.getElementById('monthlyPnlValue');
+
+                    // Fetch data
+                    const response = await fetch(`/api/calendar_data?month=${month}&year=${year}`);
+                    const result = await response.json();
+                    const calendarData = result.data || {};
+
+                    // Update Header & Total
+                    title.textContent = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+
+                    const totalPnl = result.monthly_total || 0;
+                    monthlyPnlEl.textContent = (totalPnl >= 0 ? '+' : '') + new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalPnl);
+                    monthlyPnlEl.className = `money ${totalPnl >= 0 ? 'profit' : 'loss'}`;
+
+                    // Clear existing
+                    grid.innerHTML = '';
+
+                    // Headers
+                    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    weekdays.forEach(day => {
+                        const el = document.createElement('div');
+                        el.className = 'calendar-weekday';
+                        el.textContent = day;
+                        grid.appendChild(el);
+                    });
+
+                    // Logic
+                    const firstDayIndex = new Date(year, month - 1, 1).getDay(); // 0 = Sun
+                    const daysInMonth = new Date(year, month, 0).getDate();
+                    const daysInPrevMonth = new Date(year, month - 1, 0).getDate();
+
+                    // Prev Month Filler
+                    for (let i = firstDayIndex; i > 0; i--) {
+                        grid.appendChild(createDayElement(daysInPrevMonth - i + 1, true));
+                    }
+
+                    // Current Month
+                    for (let i = 1; i <= daysInMonth; i++) {
+                        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                        grid.appendChild(createDayElement(i, false, calendarData[dateStr], dateStr));
+                    }
+
+                    // Next Month Filler - removed to satisfy user request for no extra boxes
+
+
+                    // Re-render icons after adding to DOM
+                    if (window.lucide) lucide.createIcons();
+                }
+
+                function createDayElement(dayNum, isInactive, dayData, fullDate) {
+                    const el = document.createElement('div');
+                    el.className = `day ${isInactive ? 'other-month' : ''}`;
+
+                    if (!isInactive && dayData) {
+                        el.classList.add(dayData.pnl >= 0 ? 'profit' : 'loss');
+                        el.onclick = () => window.location.href = `/journal?date=${fullDate}`;
+                    } else if (!isInactive) {
+                        el.onclick = () => window.location.href = `/journal?date=${fullDate}`;
+                    }
+
+                    // Day Number
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'date';
+                    numSpan.textContent = dayNum;
+                    el.appendChild(numSpan);
+
+                    if (dayData) {
+                        // Breach Dot
+                        if (dayData.breached) {
+                            const dot = document.createElement('span');
+                            dot.className = 'breach-dot';
+                            dot.style.right = '30px';
+                            dot.title = 'Daily Loss Breach';
+                            el.appendChild(dot);
+                        }
+
+                        // Amount
+                        const amount = document.createElement('span');
+                        amount.className = `amount ${dayData.pnl >= 0 ? 'positive' : 'negative'}`;
+                        amount.textContent = (dayData.pnl > 0 ? '+' : '') + '$' + Math.round(dayData.pnl);
+                        el.appendChild(amount);
+
+                        // Trade Count
+                        const trades = document.createElement('span');
+                        trades.className = 'trades';
+                        trades.textContent = `${dayData.count} trades`;
+                        el.appendChild(trades);
+                    }
+
+                    return el;
+                }
+            </script>
+        </div>
+    </div>
+
+    <!-- Right: Discipline Meter -->
+    <div class="flex flex-col gap-6">
+        <div
+            class="metric-card flex flex-col justify-center items-center text-center p-6 border border-gray-800 rounded-2xl">
+            <div class="mb-4">
+                <div
+                    class="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 mx-auto mb-2">
+                    <i data-lucide="brain" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-gray-400 text-xs font-bold uppercase tracking-widest">Discipline Score</h3>
+            </div>
+
+            {% if goals.emotion_score is not none %}
+            {% set emotion_color = 'text-green-400' if goals.emotion_score >= 70 else ('text-yellow-400' if
+            goals.emotion_score >= 40 else 'text-red-500') %}
+            <div class="text-5xl font-bold font-mono {{ emotion_color }} mb-2">{{ goals.emotion_score }}%</div>
+            <div class="text-sm font-semibold text-gray-200">
+                {{ 'Positive Psychology' if goals.emotion_score >= 40 else 'Needs Improvement' }}
+            </div>
+            <div class="text-[10px] text-gray-600 font-medium mt-1">Based on all active trades</div>
+            {% else %}
+            <div class="text-gray-500 text-sm font-bold uppercase tracking-widest py-2">No Data Yet</div>
+            <div class="text-[10px] text-gray-600 font-medium">Start trading to see analysis</div>
+            {% endif %}
+        </div>
+
+        <!-- Empty Box 1 -->
+        <div
+            class="metric-card flex flex-col justify-center items-center text-center p-6 bg-[#0b0b0f] border border-gray-800 rounded-2xl min-h-[200px]">
+            <!-- Future Widget -->
+        </div>
+
+        <!-- Empty Box 2 -->
+        <div
+            class="metric-card flex flex-col justify-center items-center text-center p-6 bg-[#0b0b0f] border border-gray-800 rounded-2xl min-h-[200px]">
+            <!-- Future Widget -->
+        </div>
+    </div>
+    <!-- Right: Goals & Limits -->
+
+</div>
+
+<!-- Chart Script -->
+<script>
+    function toggleEditAccount() {
+        var x = document.getElementById("editAccountForm");
+        x.style.display = (x.style.display === "none") ? "block" : "none";
+    }
+    function toggleGoals() {
+        var x = document.getElementById("editGoalsForm");
+        x.style.display = (x.style.display === "none") ? "block" : "none";
+    }
+
+    const chartEl = document.getElementById('equityChart');
+    const ctx = chartEl.getContext('2d');
+
+    // Data from Backend
+    const ALL_LABELS = JSON.parse(chartEl.dataset.labels);
+    const ALL_VALUES = JSON.parse(chartEl.dataset.values);
+    const BASE = {{ base_balance | default (5000) }};
+
+    let equityChart = null;
+
+    // Date Helpers
+    function startOfDay(date) {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
+    function startOfWeek(date) {
+        const d = new Date(date);
+        const day = d.getDay() || 7;
+        d.setDate(d.getDate() - day + 1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
+    function startOfMonth(date) {
+        return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function applyChartFilter(filterType, btn) {
+        // UI Highlight
+        document.querySelectorAll('.filter-btn').forEach(b => {
+            b.classList.remove('bg-blue-600/20', 'text-blue-400', 'border-blue-500/30', 'active');
+            b.classList.add('bg-[#1a1a1a]', 'text-gray-400', 'border-gray-800');
+        });
+        btn.classList.add('bg-blue-600/20', 'text-blue-400', 'border-blue-500/30', 'active');
+        btn.classList.remove('bg-[#1a1a1a]', 'text-gray-400', 'border-gray-800');
+
+        let filteredIndices = [];
+        const now = new Date();
+
+        if (filterType === 'all') {
+            filteredIndices = ALL_LABELS.map((_, i) => i);
+        } else {
+            let startLimit;
+            if (filterType === 'day') startLimit = startOfDay(now);
+            if (filterType === 'week') startLimit = startOfWeek(now);
+            if (filterType === 'month') startLimit = startOfMonth(now);
+
+            ALL_LABELS.forEach((label, i) => {
+                if (new Date(label) >= startLimit) filteredIndices.push(i);
+            });
+        }
+
+        // If no data, show at least the baseline point
+        let labels = filteredIndices.map(i => ALL_LABELS[i]);
+        let values = filteredIndices.map(i => ALL_VALUES[i]);
+
+        if (labels.length === 0) {
+            labels = ['No Data'];
+            values = [BASE];
+        }
+
+        updateChart(labels, values);
+    }
+
+    function updateChart(labels, values) {
+        if (!equityChart) {
+            const config = {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Account Balance',
+                            data: values,
+                            fill: {
+                                value: BASE,
+                                above: 'rgba(34, 197, 94, 0.30)',
+                                below: 'rgba(239, 68, 68, 0.30)'
+                            },
+                            borderColor: '#9ca3af',
+                            tension: 0.45,
+                            pointRadius: 4,
+                            pointBackgroundColor: (ctx) => {
+                                const val = ctx.parsed?.y;
+                                return val >= BASE ? '#22c55e' : '#ef4444';
+                            },
+                            segment: {
+                                borderColor: (ctx) => {
+                                    if (ctx.p0.parsed.y >= BASE && ctx.p1.parsed.y >= BASE) return '#22c55e';
+                                    if (ctx.p0.parsed.y < BASE && ctx.p1.parsed.y < BASE) return '#ef4444';
+                                    return ctx.p1.parsed.y >= BASE ? '#22c55e' : '#ef4444';
+                                }
+                            }
+                        },
+                        {
+                            label: 'Base Balance',
+                            data: labels.map(() => BASE),
+                            borderColor: '#9ca3af',
+                            borderWidth: 1,
+                            borderDash: [6, 6],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: '#0a0a0a',
+                            callbacks: {
+                                label: function (context) {
+                                    if (context.dataset.label === 'Base Balance') return '';
+                                    return context.dataset.label + ': ' + new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#6b7280' } },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.03)' },
+                            ticks: {
+                                color: '#6b7280',
+                                callback: (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(v)
+                            }
+                        }
+                    },
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                }
+            };
+            equityChart = new Chart(ctx, config);
+        } else {
+            equityChart.data.labels = labels;
+            equityChart.data.datasets[0].data = values;
+            equityChart.data.datasets[1].data = labels.map(() => BASE);
+            equityChart.update();
+        }
+    }
+
+    // Initial Load
+    updateChart(ALL_LABELS, ALL_VALUES);
+
+    // Auto-detect Profit/Loss for Net Profit Card
+    (function () {
+        const profitCard = document.getElementById("netProfitCard");
+        const netValue = parseFloat(profitCard.dataset.value);
+        profitCard.classList.remove("profit-outline", "loss-outline", "neutral");
+        if (netValue > 0) profitCard.classList.add("profit-outline");
+        else if (netValue < 0) profitCard.classList.add("loss-outline");
+        else profitCard.classList.add("neutral");
+    })();
+</script>
+
+<!-- Load Cinematic Glow Toggle -->
+<script src="{{ url_for('static', filename='assets/js/cinematic-glow-toggle.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            const toggleEl = document.getElementById('cinematicToggle');
+            if (!toggleEl) return;
+            
+            const switchInstance = toggleEl.dataset.switchInstance;
+            if (!switchInstance) return;
+            
+            // Initialize: OFF for trading journal, ON for backtesting
+            const currentMode = '{{ current_user.account_type }}';
+            const isBacktest = (currentMode === 'backtest');
+            switchInstance.isOn = isBacktest;
+            switchInstance.updateUI();
+            
+            console.log('Dashboard toggle init. Current mode:', currentMode, 'isOn:', isBacktest);
+            
+            // Listen for clicks
+            toggleEl.addEventListener('toggle', (e) => {
+                const newIsOn = e.detail.isOn;
+                console.log('Toggle event: newIsOn =', newIsOn);
+                
+                // Call same API as dropdown
+                switchToMode(newIsOn);
+            });
+        }, 100);
+    });
+    
+    function switchToMode(isOn) {
+        console.log('switchToMode called with isOn =', isOn);
+        
+        fetch('{{ url_for("toggle_mode_api") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isOn: isOn })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('API response:', data);
+            // Redirect based on isOn value
+            if (isOn === true) {
+                // ON = Backtesting mode
+                console.log('ON: Redirecting to backtesting');
+                setTimeout(() => window.location.href = '{{ url_for("chart_page") }}', 200);
+            } else {
+                // OFF = Trading journal mode
+                console.log('OFF: Reloading trading journal');
+                setTimeout(() => location.reload(), 200);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    }
+</script>
+{% endblock %}

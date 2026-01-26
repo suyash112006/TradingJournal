@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/layout.css') }}">
+<!-- <link rel="stylesheet" href="{{ url_for('static', filename='styles/components.css') }}"> -->
+<style>
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        border: 1px solid transparent;
+    }
+
+    .status-badge.long,
+    .status-badge.win {
+        background: rgba(0, 255, 153, 0.1);
+        color: var(--profit);
+        border-color: rgba(0, 255, 153, 0.2);
+    }
+
+    .status-badge.short,
+    .status-badge.loss {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--loss);
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .icon-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid var(--border-default);
+        background: transparent;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .icon-btn:hover {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: var(--border-glow);
+        color: var(--text-primary);
+    }
+
+    .icon-btn.edit:hover {
+        color: var(--accent);
+        border-color: rgba(59, 130, 246, 0.5);
+    }
+
+    .icon-btn.delete:hover {
+        color: var(--loss);
+        border-color: rgba(239, 68, 68, 0.5);
+    }
+
+    .icon-btn.restore:hover {
+        color: var(--profit);
+        border-color: rgba(0, 255, 153, 0.5);
+    }
+
+    .journal-tabs {
+        display: flex;
+        gap: 24px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border-default);
+    }
+
+    .journal-tab {
+        padding: 12px 4px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+        text-decoration: none;
+    }
+
+    .journal-tab.active {
+        color: var(--profit);
+        border-bottom-color: var(--profit);
+    }
+
+    .journal-tab:hover {
+        color: var(--text-primary);
+    }
+
+    .deleted-row td {
+        opacity: 0.4;
+        filter: grayscale(1);
+    }
+
+    .deleted-row td:last-child {
+        opacity: 1;
+        filter: none;
+    }
+
+    /* Transparent Blur Background for Trade History */
+    .table-container {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-card);
+    }
+
+    .filter-card {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-card);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header mb-8">
+    <div class="flex justify-between items-center w-full">
+        <div class="flex items-center gap-4">
+            <h1 class="page-title">Trade History</h1>
+            {% if date_filter %}
+            <span
+                class="bg-[var(--accent)]/10 text-[var(--accent)] px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[var(--accent)]/20">
+                Filtered: {{ date_filter }}
+            </span>
+            {% endif %}
+        </div>
+        <div class="flex gap-3">
+            <button
+                class="bg-[#1a1a1f] border border-gray-800 px-4 py-2 rounded-lg hover:bg-[#222] text-xs font-bold uppercase tracking-wider">Export
+                CSV</button>
+        </div>
+    </div>
+</header>
+<!-- Filter Bar -->
+<form method="GET" action="{{ url_for('journal') }}" class="flex gap-4 mb-8 flex-wrap filter-card p-4 rounded-2xl">
+    <input type="hidden" name="view" value="{{ view }}">
+
+    <div class="flex-1 min-w-[200px]">
+        <input type="text" name="symbol" placeholder="Search Symbol..." value="{{ request.args.get('symbol', '') }}"
+            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-2.5 text-sm focus:border-gray-600 outline-none transition-all">
+    </div>
+
+    <div class="flex-1 min-w-[200px]">
+        <select name="direction"
+            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-2.5 text-sm focus:border-gray-600 outline-none h-[44px] appearance-none cursor-pointer">
+            <option value="">All Directions</option>
+            <option value="Long" {% if request.args.get('direction')=='Long' %}selected{% endif %}>Long</option>
+            <option value="Short" {% if request.args.get('direction')=='Short' %}selected{% endif %}>Short</option>
+        </select>
+    </div>
+
+    <div class="flex-1 min-w-[200px]">
+        <select name="emotion"
+            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-2.5 text-sm focus:border-gray-600 outline-none h-[44px] appearance-none cursor-pointer">
+            <option value="">All Emotions</option>
+            <option value="Neutral" {% if request.args.get('emotion')=='Neutral' %}selected{% endif %}>Neutral</option>
+            <option value="Greedy" {% if request.args.get('emotion')=='Greedy' %}selected{% endif %}>Greedy</option>
+            <option value="Fearful" {% if request.args.get('emotion')=='Fearful' %}selected{% endif %}>Fearful</option>
+            <option value="Patient" {% if request.args.get('emotion')=='Patient' %}selected{% endif %}>Patient</option>
+            <option value="Disciplined" {% if request.args.get('emotion')=='Disciplined' %}selected{% endif %}>
+                Disciplined</option>
+            <option value="Impulsive" {% if request.args.get('emotion')=='Impulsive' %}selected{% endif %}>Impulsive
+            </option>
+        </select>
+    </div>
+
+    <!-- High R:R Filter -->
+    <div class="flex items-center gap-3 px-4 border border-gray-800 rounded-xl bg-[#0b0b0f] h-[44px]">
+        <input type="checkbox" name="min_rr" value="2" id="chkRR"
+            class="w-4 h-4 rounded border-gray-700 bg-gray-900 text-[var(--accent)] focus:ring-0 focus:ring-offset-0" {%
+            if request.args.get('min_rr') %}checked{% endif %}>
+        <label for="chkRR"
+            class="text-xs font-bold text-gray-400 cursor-pointer uppercase tracking-wider whitespace-nowrap hover:text-white transition-colors">High
+            Quality (R:R ≥ 2)</label>
+    </div>
+
+    <button type="submit"
+        class="bg-[var(--accent)] hover:bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-900/10">Apply</button>
+    <a href="{{ url_for('journal', view=view) }}"
+        class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#222] flex items-center transition-all">Reset</a>
+</form>
+</header>
+<!-- Tabs -->
+<div class="journal-tabs">
+    <a href="{{ url_for('journal', view='active') }}"
+        class="journal-tab {{ 'active' if view != 'trash' else '' }}">Active Trades</a>
+    <a href="{{ url_for('journal', view='trash') }}" class="journal-tab {{ 'active' if view == 'trash' else '' }}">Trash
+        🗑️</a>
+</div>
+
+<div class="table-container">
+    <div class="overflow-x-auto">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Pair</th>
+                    <th>Dir</th>
+                    <th>Entry</th>
+                    <th>Stop</th>
+                    <th>R:R</th>
+                    <th>P&L</th>
+                    <th>Result</th>
+                    <th class="w-[100px] text-center" style="text-align: center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trade in trades %}
+                <tr id="trade-row-{{ trade.id }}" class="{{ 'deleted-row' if trade.is_deleted else '' }}">
+                    <td class="text-gray-500">{{ trade.date.strftime('%Y-%m-%d') }}</td>
+                    <td class="font-bold">{{ trade.symbol }}</td>
+                    <td>
+                        <span class="status-badge {{ trade.direction|lower }}">
+                            {{ 'L' if trade.direction == 'Long' else 'S' }}
+                        </span>
+                    </td>
+                    <td class="font-mono text-xs">{{ trade.entry_price }}</td>
+                    <td class="font-mono text-xs text-red-400">{{ trade.stop_loss or '-' }}</td>
+                    <td class="font-mono text-xs">
+                        {% if trade.rr %}
+                        <span
+                            class="{{ 'text-[#00ff99]' if trade.rr >= 3 else ('text-yellow-400' if trade.rr >= 2 else 'text-red-400') }}">
+                            1:{{ "%.2f"|format(trade.rr) }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-600">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="money {{ 'profit' if trade.pnl >= 0 else 'loss' }}">
+                            {{ trade.pnl | format_currency }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="flex flex-col gap-1 items-start">
+                            <span class="status-badge {{ trade.result|lower if trade.result else 'short' }}">
+                                {{ trade.result or 'OPEN' }}
+                            </span>
+                            {% if trade.discipline %}
+                            <div class="flex gap-0.5 text-[10px] text-yellow-500 pt-1">
+                                {% for i in range(trade.discipline) %}★{% endfor %}{% for i in range(5 -
+                                trade.discipline) %}<span class="text-gray-800">★</span>{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="px-3 py-2">
+                        <div class="flex items-center justify-center gap-2">
+                            {% if trade.is_deleted %}
+                            <button class="action-btn" onclick="restoreTrade('{{ trade.id }}')" title="Restore Trade">
+                                <i data-lucide="undo-2" class="w-4 h-4"></i>
+                            </button>
+                            <button class="action-btn danger" onclick="deleteTrade('{{ trade.id }}', true)"
+                                title="Delete Forever">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                            {% else %}
+                            <a href="{{ url_for('edit_trade', trade_id=trade.id) }}" class="action-btn"
+                                title="Edit Trade">
+                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                            </a>
+                            <button class="action-btn danger" onclick="deleteTrade('{{ trade.id }}', false)"
+                                title="Delete Trade">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center text-gray-500 py-12 italic">
+                        {{ 'Trash is empty.' if view == 'trash' else 'No trades recorded yet.' }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="flex flex-col items-center justify-center py-6 border-t border-gray-800 gap-4">
+    <div class="pagination flex items-center gap-2 text-sm">
+
+        <!-- PREV -->
+        {% if page > 1 %}
+        <a href="{{ url_for('journal', view=view, page=page-1, symbol=request.args.get('symbol'), direction=request.args.get('direction')) }}"
+            class="border border-gray-700 w-8 h-8 rounded flex items-center justify-center hover:bg-gray-800 text-gray-400 no-underline transition-all">
+            &lt;
+        </a>
+        {% endif %}
+
+        <!-- PAGES -->
+        {% for p in range(1, total_pages + 1) %}
+        <a href="{{ url_for('journal', view=view, page=p, symbol=request.args.get('symbol'), direction=request.args.get('direction')) }}"
+            class="w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all no-underline
+           {{ 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' if p == page else 'border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' }}">
+            {{ p }}
+        </a>
+        {% endfor %}
+
+        <!-- NEXT -->
+        {% if page < total_pages %} <a
+            href="{{ url_for('journal', view=view, page=page+1, symbol=request.args.get('symbol'), direction=request.args.get('direction')) }}"
+            class="border border-gray-700 w-8 h-8 rounded flex items-center justify-center hover:bg-gray-800 text-gray-400 no-underline transition-all">
+            &gt;
+            </a>
+            {% endif %}
+
+            <!-- COUNT -->
+            <span class="ml-4 text-xs font-mono text-gray-500 font-bold uppercase tracking-wider">
+                {{ total_trades }} Trades
+            </span>
+    </div>
+</div>
+
+</div>
+
+<script>
+    async function deleteTrade(tradeId, isPermanent) {
+        if (isPermanent) {
+            if (!confirm('Permanently delete this trade? This cannot be undone.')) return;
+        }
+
+        const url = isPermanent ? `/trade/permanent_delete/${tradeId}` : `/trade/delete/${tradeId}`;
+        const row = document.getElementById(`trade-row-${tradeId}`);
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ajax: true })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                // Animation
+                row.style.transition = "all 0.3s ease";
+                row.style.opacity = "0";
+                row.style.transform = "translateX(20px)";
+
+                setTimeout(() => {
+                    row.remove();
+                }, 300);
+            } else {
+                alert('Error deleting trade');
+            }
+        } catch (err) {
+            console.error(err);
+            window.location.reload();
+        }
+    }
+
+    async function restoreTrade(tradeId) {
+        const url = `/trade/restore/${tradeId}`;
+        const row = document.getElementById(`trade-row-${tradeId}`);
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ajax: true })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                // Animation
+                row.style.transition = "all 0.3s ease";
+                row.style.opacity = "0";
+                row.style.transform = "translateX(-20px)";
+
+                setTimeout(() => {
+                    row.remove();
+                    // Optional: If trash is empty now, show empty state
+                    const tbody = document.querySelector('tbody');
+                    if (tbody.children.length === 0) {
+                        window.location.reload();
+                    }
+                }, 300);
+            } else {
+                alert('Error restoring trade');
+            }
+        } catch (err) {
+            console.error(err);
+            window.location.reload();
+        }
+    }
+</script>
+<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
+{% endblock %}

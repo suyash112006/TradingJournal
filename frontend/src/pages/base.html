@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TraderPro</title>
+    <!-- Global Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <!-- PWA Manifest for Standalone Mode -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/layout.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/style.css') }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        background: '#000000',
+                        sidebar: '#050505',
+                        card: '#0a0a0a',
+                        primary: '#3b82f6', // blue-500
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Base styles from Tailwind config already active */
+        /* Sidebar & Navigation */
+        #sidebar {
+            background: var(--bg-glass) !important;
+            backdrop-filter: blur(14px);
+            border-right: 1px solid var(--border-glow) !important;
+        }
+
+        .nav-item {
+            position: relative;
+            height: 44px;
+            padding: 0 16px;
+            margin: 0 12px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-primary);
+        }
+
+        /* Active State (Neon Green Accent) */
+        .nav-item.active {
+            background: linear-gradient(90deg,
+                    rgba(0, 255, 153, 0.2),
+                    rgba(0, 255, 153, 0.05)) !important;
+            color: var(--profit) !important;
+            box-shadow: inset 3px 0 0 var(--profit) !important;
+        }
+
+        /* Remove old indicator logic */
+        .nav-item.active::before {
+            display: none;
+        }
+
+        .logo {
+            font-family: var(--font-main);
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-trade {
+            color: var(--text-primary);
+        }
+
+        .logo-journal {
+            color: var(--profit);
+            text-shadow: 0 0 10px rgba(0, 255, 153, 0.4);
+        }
+
+        /* Lightbox - Fullscreen Viewer */
+        #lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            cursor: zoom-out;
+            padding: 20px;
+            backdrop-filter: blur(8px);
+        }
+
+        #lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        #lightbox:active img {
+            transform: scale(0.98);
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+
+<body class="bg-[#0b0b0f] text-white font-sans h-screen flex overflow-hidden">
+
+    <!-- Global Animated Background -->
+    <!-- Global Animated Background (Theme) -->
+    <div class="background-layer">
+        <div class="bg-grid"></div>
+        <div id="theme-stars"></div>
+        <div id="theme-particles"></div>
+
+        <!-- Glowing Blobs -->
+        <div class="bg-blob blob-1"></div>
+        <div class="bg-blob blob-2"></div>
+        <div class="bg-blob blob-3"></div>
+
+        <!-- Dark Vignette -->
+        <div class="bg-vignette"></div>
+    </div>
+
+    <!-- Mobile Header -->
+    <div
+        class="md:hidden fixed top-0 left-0 w-full h-16 bg-[#050505] border-b border-gray-900 flex items-center justify-between px-4 z-50">
+        <div class="logo">
+            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
+            <span class="logo-trade">Backtest</span><span class="logo-journal">Mode</span>
+            {% else %}
+            <span class="logo-trade">Trade</span><span class="logo-journal">Journal</span>
+            {% endif %}
+        </div>
+        <button id="menuBtn" class="text-gray-300 hover:text-white p-2 text-2xl">
+            ☰
+        </button>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed md:relative inset-y-0 left-0 w-64 bg-[#050505] md:translate-x-0 -translate-x-full transition-transform duration-300 z-40 md:z-0 flex flex-col md:rounded-xl md:m-4 md:border border-gray-900/50 overflow-hidden h-full md:h-[calc(100vh-2rem)] pl-0">
+
+        <!-- Glow effect (Desktop only) -->
+        <div
+            class="absolute inset-y-0 left-0 w-[1px] bg-gradient-to-b from-transparent via-[var(--profit)] to-transparent opacity-20 hidden md:block">
+        </div>
+
+        <div class="logo mb-8 px-6 pt-6 hidden md:block">
+            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
+            <span class="logo-trade">Backtest</span><span class="logo-journal">Mode</span>
+            {% else %}
+            <span class="logo-trade">Trade</span><span class="logo-journal">Journal</span>
+            {% endif %}
+        </div>
+
+        <!-- Mobile padding helper -->
+        <div class="h-16 md:hidden"></div>
+
+        <nav class="nav-links space-y-2 flex-1 px-4 py-4 md:p-0">
+            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
+            <!-- Backtesting Mode Navbar -->
+            <a href="{{ url_for('chart_page') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'chart_page' else '' }}">
+                <i data-lucide="line-chart" class="w-4 h-4"></i>
+                Chart
+            </a>
+
+            <a href="#" class="nav-item">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                Replay
+            </a>
+
+            <a href="#" class="nav-item">
+                <i data-lucide="pencil-line" class="w-4 h-4"></i>
+                Strategy Tester
+            </a>
+
+            <a href="#" class="nav-item">
+                <i data-lucide="bar-chart" class="w-4 h-4"></i>
+                Results
+            </a>
+
+            <a href="{{ url_for('settings') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'settings' else '' }}">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+                Settings
+            </a>
+            {% else %}
+            <!-- Trading Journal Navbar (Default) -->
+            <a href="{{ url_for('dashboard') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'dashboard' else '' }}">
+                <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                Dashboard
+            </a>
+
+            <a href="{{ url_for('new_entry') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'new_entry' else '' }}">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                New Entry
+            </a>
+
+            <a href="{{ url_for('journal') }}" class="nav-item {{ 'active' if request.endpoint == 'journal' else '' }}">
+                <i data-lucide="book-open" class="w-4 h-4"></i>
+                Journal
+            </a>
+
+            <a href="{{ url_for('analytics') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'analytics' else '' }}">
+                <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                Analytics
+            </a>
+
+            <a href="{{ url_for('settings') }}"
+                class="nav-item {{ 'active' if request.endpoint == 'settings' else '' }}">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+                Settings
+            </a>
+            {% endif %}
+        </nav>
+
+        <div class="mt-auto p-4 border-t border-gray-900">
+            <a href="{{ url_for('logout') }}" class="logout-btn">
+                <span class="logout-content">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                    <span class="logout-text">Logout</span>
+                </span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Overlay -->
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden glass-backdrop"></div>
+
+    <!-- Main Content -->
+    <main
+        class="flex-1 bg-transparent md:rounded-xl md:border border-gray-900/50 relative overflow-hidden flex flex-col h-full md:h-[calc(100vh-2rem)] md:m-4 md:ml-0 mt-16 md:mt-0">
+        <div
+            class="p-4 md:p-8 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+            {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            {% for message in messages %}
+            <div class="mb-4 p-4 rounded-lg bg-blue-900/20 border border-blue-500/30 text-blue-200 text-sm">
+                {{ message }}
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <style>
+        /* Custom scrollbar */
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 20px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        .glass-backdrop {
+            backdrop-filter: blur(4px);
+        }
+    </style>
+
+    <script>
+        const menuBtn = document.getElementById('menuBtn');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        menuBtn.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+
+        // Close sidebar on link click (mobile)
+        document.querySelectorAll('.nav-item').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth < 768) {
+                    toggleSidebar();
+                }
+            });
+        });
+
+        // Initialize Lucide Icons
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    </script>
+    <!-- Lightbox Overlay -->
+    <div id="lightbox" onclick="closeFullscreen()">
+        <img id="lightboxImg" src="" alt="View Fullscreen">
+    </div>
+
+    <script>
+        let activeLightboxTrigger = null;
+
+        function openFullscreen(src, trigger = null) {
+            const box = document.getElementById("lightbox");
+            const img = document.getElementById("lightboxImg");
+            img.src = src;
+            activeLightboxTrigger = trigger;
+            box.style.display = "flex";
+            document.body.style.overflow = "hidden"; // Prevent scroll
+        }
+
+        function closeFullscreen() {
+            document.getElementById("lightbox").style.display = "none";
+            document.body.style.overflow = ""; // Restore scroll
+            activeLightboxTrigger = null;
+        }
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', (e) => {
+            const lightbox = document.getElementById("lightbox");
+            if (lightbox.style.display === "flex") {
+                if (e.key === "Delete") {
+                    if (activeLightboxTrigger) {
+                        const previewItem = activeLightboxTrigger.closest('.preview-item');
+                        if (previewItem) {
+                            const removeBtn = previewItem.querySelector('.remove-btn');
+                            if (removeBtn) {
+                                removeBtn.click();
+                                closeFullscreen();
+                            }
+                        }
+                    }
+                } else if (e.key === "Escape") {
+                    closeFullscreen();
+                }
+            }
+        });
+
+
+
+    </script>
+    <script src="{{ url_for('static', filename='assets/js/animation.js') }}"></script>
+</body>
+
+</html>

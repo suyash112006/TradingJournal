@@ -1,0 +1,2163 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="https://unpkg.com/lightweight-charts@4.0.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+    /* Viewport height variable for reliable fullscreen */
+    :root {
+        --vh: 100vh;
+    }
+
+    /* Fullscreen Lock - Prevents body scroll and layout shifting */
+    body.is-chart-fullscreen {
+        overflow: hidden !important;
+    }
+
+    /* Hide Sidebar and Headers in Fullscreen */
+    body.is-chart-fullscreen #sidebar,
+    body.is-chart-fullscreen .logo,
+    body.is-chart-fullscreen nav,
+    body.is-chart-fullscreen header,
+    body.is-chart-fullscreen .mobile-header,
+    body.is-chart-fullscreen .page-header {
+        display: none !important;
+    }
+
+    /* Reset Main Container constraints */
+    body.is-chart-fullscreen main {
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        transform: none !important;
+        background: #050505 !important;
+        z-index: 1000 !important;
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+    }
+
+    /* When locked, maximize container */
+    /* When locked, maximize container */
+    /* When locked, maximize container */
+    body.is-chart-fullscreen .chart-container {
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 99999;
+        background-color: #050505;
+        /* Updated: Deep soft black */
+        display: flex;
+        flex-direction: column;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+    }
+
+    /* Adjust children for flex layout */
+    body.is-chart-fullscreen .chart-controls {
+        flex-shrink: 0;
+        padding: 12px 24px;
+        background: transparent !important;
+        border-bottom: none !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        z-index: 50;
+        pointer-events: none;
+        /* Let clicks pass through empty space */
+    }
+
+    body.is-chart-fullscreen .chart-controls>* {
+        pointer-events: auto;
+        /* Re-enable clicks on buttons */
+    }
+
+    /* Fix Drawing Toolbar Overlap in Fullscreen */
+    body.is-chart-fullscreen .drawing-toolbar {
+        margin-top: 60px;
+        /* Push down below floating header */
+        position: relative;
+        z-index: 55;
+    }
+
+    body.is-chart-fullscreen .chart-main-area {
+        flex: 1;
+        /* Grow to fill space */
+        width: 100%;
+        height: 0 !important;
+        /* Force flex sizing */
+        min-height: 0;
+        /* Important for nested flex containers */
+        display: flex;
+    }
+
+    body.is-chart-fullscreen #candleChart {
+        height: 100% !important;
+        width: 100% !important;
+        border-radius: 0 !important;
+    }
+
+    body.is-chart-fullscreen .replay-controls {
+        flex-shrink: 0;
+        border-radius: 0;
+        margin: 0;
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: #050505;
+    }
+
+    #candleChart {
+        width: 100%;
+        height: 600px;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .chart-container {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+
+    .chart-controls {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    .chart-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.7);
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .chart-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .chart-btn.active {
+        background: rgba(37, 99, 235, 0.2);
+        border-color: rgba(37, 99, 235, 0.6);
+        color: #60a5fa;
+        box-shadow: 0 0 10px rgba(37, 99, 235, 0.3);
+    }
+
+    /* Fullscreen Styles */
+    .chart-container.fullscreen {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: var(--vh) !important;
+        z-index: 99999 !important;
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: #0b0f14;
+        display: flex;
+        flex-direction: column;
+        padding: 0 !important;
+        /* Edge-to-edge */
+        transition: opacity 0.15s ease;
+    }
+
+    .chart-container.fullscreen .chart-controls {
+        padding: 12px 12px 0 12px;
+        margin-bottom: 8px;
+    }
+
+    .chart-container.fullscreen .replay-controls {
+        padding: 12px;
+        margin: 0;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-bottom: none;
+        z-index: 60;
+        /* Ensure above chart */
+        position: relative;
+        background: #050505;
+        /* Solid background */
+    }
+
+    .chart-container.fullscreen #candleChart {
+        height: 100% !important;
+        flex: 1;
+    }
+
+    .chart-container.fullscreen .chart-main-area {
+        flex: 1;
+        min-height: 0;
+    }
+
+    .fullscreen-btn {
+        margin-left: auto;
+        font-size: 16px;
+    }
+
+    .chart-container.fullscreen .chart-controls.hidden,
+    .chart-container.fullscreen .replay-controls.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    /* Hide fullscreen toggle in fullscreen mode (Force ESC to exit) */
+    body.is-chart-fullscreen .fullscreen-btn {
+        display: none !important;
+    }
+
+    .chart-info {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        margin-top: 12px;
+    }
+
+    .file-input-wrapper {
+        position: relative;
+        display: inline-block;
+    }
+
+    .file-input-wrapper input[type="file"] {
+        display: none;
+    }
+
+    .file-upload-label {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.7);
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-block;
+    }
+
+    .file-upload-label:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .upload-status {
+        font-size: 11px;
+        color: rgba(0, 255, 153, 0.8);
+        margin-top: 8px;
+        min-height: 18px;
+    }
+
+    .upload-error {
+        color: rgba(255, 68, 68, 0.8);
+    }
+
+    .replay-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 20px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    .replay-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.7);
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        min-width: 50px;
+    }
+
+    .replay-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .replay-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .replay-btn.playing {
+        background: rgba(0, 255, 153, 0.2);
+        border-color: rgba(0, 255, 153, 0.5);
+        color: rgba(0, 255, 153, 1);
+    }
+
+    .replay-speed-control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .replay-speed-control label {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    .replay-speed-control input[type="range"] {
+        width: 120px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
+    .replay-speed-control input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(0, 255, 153, 0.8);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .replay-speed-control input[type="range"]::-webkit-slider-thumb:hover {
+        background: rgba(0, 255, 153, 1);
+        box-shadow: 0 0 8px rgba(0, 255, 153, 0.5);
+    }
+
+    .replay-speed-control input[type="range"]::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(0, 255, 153, 0.8);
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+    }
+
+    .replay-speed-value {
+        font-size: 11px;
+        color: rgba(0, 255, 153, 0.8);
+        min-width: 30px;
+        text-align: right;
+        font-weight: 600;
+    }
+
+    .replay-progress {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .replay-progress-bar {
+        flex: 1;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .replay-progress-fill {
+        height: 100%;
+        background: rgba(0, 255, 153, 0.6);
+        width: 0%;
+        transition: width 0.1s linear;
+    }
+
+    .replay-progress-text {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.5);
+        min-width: 60px;
+        text-align: right;
+        font-family: monospace;
+    }
+
+    /* Drawing Toolbar Styles */
+    .chart-main-area {
+        display: flex;
+        gap: 12px;
+        position: relative;
+    }
+
+    .drawing-toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 8px;
+        border-radius: 8px;
+    }
+
+    .tool-btn {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        color: rgba(255, 255, 255, 0.6);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 18px;
+    }
+
+    .tool-btn:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .tool-btn.active {
+        background: rgba(0, 255, 153, 0.15);
+        border-color: rgba(0, 255, 153, 0.4);
+        color: rgba(0, 255, 153, 1);
+    }
+
+    .chart-wrapper {
+        flex: 1;
+        position: relative;
+        min-width: 0;
+    }
+
+    /* Custom Price Ladder */
+    #price-axis {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 60px;
+        /* Adjust width as needed */
+        height: 100%;
+        pointer-events: none;
+        /* Let clicks pass through to chart */
+        z-index: 20;
+        /* Above chart canvas */
+        overflow: hidden;
+    }
+
+    .price-label {
+        position: absolute;
+        right: 8px;
+        font-size: 11px;
+        font-family: 'Roboto Mono', monospace;
+        /* Monospace for numbers */
+        color: #9ca3af;
+        transform: translateY(-50%);
+        /* Center on tick */
+        white-space: nowrap;
+        height: 16px;
+        line-height: 16px;
+        transition: color 0.1s;
+    }
+
+    .price-label.current {
+        color: #22c55e;
+        font-weight: 700;
+        background: rgba(34, 197, 94, 0.1);
+        padding: 0 4px;
+        border-radius: 4px;
+        right: 4px;
+        /* Pull closer for emphasis */
+    }
+
+    /* Fullscreen Price Label Fix */
+    body.is-chart-fullscreen .price-label {
+        color: #ffffff !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animate-box">
+
+    <div class="page-header">
+        <h1 class="page-title">Chart</h1>
+    </div>
+
+    <!-- Candlestick Chart -->
+    <div class="chart-container">
+        <div class="chart-controls">
+            <button class="chart-btn" data-timeframe="M1" onclick="switchTimeframe('M1')">1m</button>
+            <button class="chart-btn" data-timeframe="M3" onclick="switchTimeframe('M3')">3m</button>
+            <button class="chart-btn" data-timeframe="M5" onclick="switchTimeframe('M5')">5m</button>
+            <button class="chart-btn" data-timeframe="M15" onclick="switchTimeframe('M15')">15m</button>
+            <button class="chart-btn" data-timeframe="M30" onclick="switchTimeframe('M30')">30m</button>
+            <button class="chart-btn" data-timeframe="H1" onclick="switchTimeframe('H1')">1h</button>
+            <button class="chart-btn" data-timeframe="H2" onclick="switchTimeframe('H2')">2h</button>
+            <button class="chart-btn" data-timeframe="H4" onclick="switchTimeframe('H4')">4h</button>
+            <button class="chart-btn" data-timeframe="D1" onclick="switchTimeframe('D1')">1d</button>
+            <button class="chart-btn" data-timeframe="W1" onclick="switchTimeframe('W1')">1w</button>
+            <button class="chart-btn fullscreen-btn" onclick="toggleFullscreen()"
+                title="Toggle Fullscreen (F)">⛶</button>
+        </div>
+
+        <div class="chart-main-area" style="position: relative;">
+            <!-- Drawing Toolbar -->
+            <div class="drawing-toolbar">
+                <button class="tool-btn active" id="tool-cursor" onclick="setActiveTool('cursor')"
+                    title="Cursor (Selection)">
+                    🖱️
+                </button>
+                <button class="tool-btn" id="tool-trendline" onclick="setActiveTool('trendline')" title="Trend Line">
+                    📈
+                </button>
+                <button class="tool-btn" id="tool-horizline" onclick="setActiveTool('horizline')"
+                    title="Horizontal Line">
+                    ➖
+                </button>
+                <div style="flex: 1;"></div>
+                <button class="tool-btn" onclick="clearAllDrawings()" title="Clear All Drawings"
+                    style="color: rgba(255, 68, 68, 0.6);">
+                    🗑️
+                </button>
+            </div>
+
+            <div class="chart-wrapper">
+                <div id="candleChart"></div>
+                <!-- No Data Overlay -->
+                <div id="noDataOverlay"
+                    style="position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.65); backdrop-filter: blur(6px); z-index:50; color:#9ca3af; font-size:14px; font-weight:500;">
+                    No data available for this timeframe
+                </div>
+            </div>
+
+            <!-- Custom Price Ladder Overlay REMOVED -->
+        </div>
+
+        <!-- Replay Controls -->
+        <div class="replay-controls" id="replayControls" style="display: none;">
+            <button class="replay-btn" id="replayPlayBtn" onclick="toggleReplay()">▶ Play</button>
+            <button class="replay-btn" id="replayNextBtn" onclick="nextCandle()" title="Show next candle">⏭
+                Next</button>
+            <button class="replay-btn" id="replayResetBtn" onclick="resetReplay()" title="Reset to start">🔄
+                Reset</button>
+            <div class="replay-separator"
+                style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 8px;"></div>
+            <button class="replay-btn" id="replayCutBtn" onclick="toggleReplayCutMode()"
+                title="Jump to Candle (Replay From Here)">✂️
+                Jump To</button>
+
+            <div class="replay-speed-control">
+                <label for="replaySpeed">Speed:</label>
+                <input type="range" id="replaySpeed" min="0.2" max="3" step="0.1" value="1"
+                    onchange="updateReplaySpeed(this.value)" title="Adjust replay speed">
+                <span class="replay-speed-value" id="replaySpeedValue">1x</span>
+            </div>
+
+            <div class="replay-progress" onclick="handleProgressBarClick(event)" style="cursor: pointer;"
+                title="Click to jump">
+                <div class="replay-progress-bar">
+                    <div class="replay-progress-fill" id="replayProgressFill"></div>
+                </div>
+                <span class="replay-progress-text" id="replayProgressText">0/0</span>
+            </div>
+        </div>
+
+        <!-- Cut Mode Toast Overlay -->
+        <div id="cutModeToast"
+            style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(37, 99, 235, 0.9); color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 100;">
+            Select a candle to start replay from...
+        </div>
+
+    </div>
+
+</div>
+
+<!-- TradingView Lightweight Charts Initialization -->
+<script>
+    let chart = null;
+    let candleSeries = null;
+    let currentTimeframe = 'M5';
+    let uploadedData = null; // Currently visible candles
+    let activeSymbol = '{{ symbol }}';
+    let AVAILABLE_TFS = []; // Loaded from backend
+    let cursorTime = null; // Master Backtest Clock
+
+    // --- PERFORMANCE OPTIMIZATION SYSTEM (TradingView Grade) ---
+    const MAX_RENDER = 5000;
+    const PREVIEW_COUNT = 2000;
+
+    /**
+     * Centralized Render Gate: All chart data updates MUST go through this.
+     * Enforces the 5,000 candle limit and prevents main-thread blocking.
+     */
+    function safeRender(series, data, autoScroll = false) {
+        if (!series || !data || !data.length) return;
+
+        // Rule: Never render more than MAX_RENDER
+        const sliced = (data.length > MAX_RENDER)
+            ? data.slice(data.length - MAX_RENDER)
+            : data;
+
+        requestAnimationFrame(() => {
+            series.setData(sliced);
+
+            if (autoScroll && chart) {
+                chart.timeScale().scrollToRealTime();
+            }
+        });
+    }
+
+    /**
+     * Centralized Slicing: Calculates the correct window for any given cursor.
+     */
+    const applyReplaySlice = () => {
+        if (!candleSeries || !uploadedData) return;
+        const end = replay.active ? replay.cursorIndex : uploadedData.length;
+        const start = Math.max(0, end - MAX_RENDER);
+        const slice = uploadedData.slice(start, end);
+        safeRender(candleSeries, slice, replay.autoScroll);
+    };
+
+    // LocalStorage keys
+    const STORAGE_KEY_DATA = 'chart_uploaded_data';
+    const STORAGE_KEY_TIMEFRAME = 'chart_timeframe';
+
+    // Load saved data from localStorage
+    const loadSavedData = () => {
+        try {
+            const savedDataStr = localStorage.getItem(STORAGE_KEY_DATA);
+            if (savedDataStr) {
+                const data = JSON.parse(savedDataStr);
+                console.log('📂 Found saved data in localStorage:', data.length, 'candles');
+                return data;
+            }
+        } catch (e) {
+            console.warn('Failed to load from localStorage:', e);
+        }
+        return null;
+    };
+
+    // Clear saved data from localStorage
+    const clearSavedData = () => {
+        try {
+            localStorage.removeItem(STORAGE_KEY_DATA);
+            localStorage.removeItem(STORAGE_KEY_TIMEFRAME);
+            console.log('🗑️ Cleared saved data from localStorage');
+
+            // Reset chart to sample data
+            uploadedData = null;
+            const data = generateSampleData(100);
+            if (candleSeries) {
+                // FIXED: Use safeRender for clearing
+                safeRender(candleSeries, data);
+                chart.timeScale().scrollToRealTime();
+            }
+
+            // Hide replay controls
+            document.getElementById('replayControls').style.display = 'none';
+
+            // Update status
+            const statusEl = document.getElementById('uploadStatus');
+            if (statusEl) {
+                statusEl.textContent = '🗑️ Saved data cleared';
+                setTimeout(() => {
+                    statusEl.textContent = '';
+                }, 3000);
+            }
+        } catch (e) {
+            console.warn('Failed to clear localStorage:', e);
+        }
+    };
+
+    // Ensure chart is initialized before any operations
+    const ensureChartReady = () => {
+        return new Promise((resolve) => {
+            if (chart && candleSeries) {
+                resolve();
+                return;
+            }
+
+            // Wait up to 5 seconds for chart to initialize
+            const checkInterval = setInterval(() => {
+                if (chart && candleSeries) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                resolve(); // Resolve anyway after timeout
+            }, 5000);
+        });
+    };
+
+    // Parse and map CSV file from MT5 export to candlestick format
+    // Format: 2022.01.03 00:00 00 1830.63 1831.82 1828.03 1828.49 1353025
+    // Columns: DATE TIME UNKNOWN OPEN HIGH LOW CLOSE VOLUME
+    const parseCSV = (csvText) => {
+        console.log('🔵 parseCSV called with text length:', csvText.length);
+        console.log('First 200 chars:', csvText.substring(0, 200));
+
+        const lines = csvText.trim().split('\n');
+        const candleData = [];
+
+        console.log('📊 Split into', lines.length, 'lines');
+        console.log('Line 0:', lines[0]);
+        console.log('Line 1:', lines[1]);
+        console.log('Line 2:', lines[2]);
+
+        // Skip header row if it exists
+        let startRow = 0;
+        const firstLine = lines[0];
+        if (firstLine.includes('DATE') || firstLine.includes('OPEN') || firstLine.includes('<')) {
+            startRow = 1;
+            console.log('Skipping header row');
+        }
+
+        console.log('Parsing CSV with', lines.length, 'lines, starting from row', startRow);
+
+        // Parse each data row
+        for (let i = startRow; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue; // Skip empty lines
+
+            // Split by whitespace (spaces or tabs)
+            const columns = line.split(/\s+/);
+
+            console.log('Row', i, 'columns:', columns);
+
+            // Expected format: DATE TIME UNKNOWN OPEN HIGH LOW CLOSE VOLUME
+            // Minimum 8 columns needed
+            if (columns.length < 7) {
+                console.warn('Row', i, '❌ Not enough columns (expected at least 7):', columns.length);
+                continue;
+            }
+
+            try {
+                const dateStr = columns[0];  // e.g., "2026.01.23"
+                const timeStr = columns[1];  // e.g., "20:00:00"
+
+                // CORRECTED MAPPING based on actual CSV values:
+                // Format: DATE TIME OPEN HIGH LOW CLOSE VOLUME SPREAD UNKNOWN
+                const open = parseFloat(columns[2]);   // e.g., "4965.91"
+                const high = parseFloat(columns[3]);   // e.g., "4984.16"
+                const low = parseFloat(columns[4]);    // e.g., "4958.32"
+                const close = parseFloat(columns[5]);  // e.g., "4966.77"
+                // columns[6] is volume, columns[7] is spread, columns[8] is unknown
+
+                console.log('  Parsed:', { dateStr, timeStr, open, high, low, close });
+
+                // Validate OHLC values are numbers
+                if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) {
+                    console.warn('Row', i, '❌ Invalid OHLC values:', { open, high, low, close });
+                    continue;
+                }
+
+                // Validate OHLC logic (high must be highest, low must be lowest)
+                if (high < low) {
+                    console.warn('Row', i, '❌ Invalid OHLC: high < low', { high, low });
+                    continue;
+                }
+                if (high < open || high < close) {
+                    console.warn('Row', i, '⚠️ Warning: high is less than open/close', { high, open, close });
+                }
+                if (low > open || low > close) {
+                    console.warn('Row', i, '⚠️ Warning: low is greater than open/close', { low, open, close });
+                }
+
+                // Combine date and time for timestamp parsing
+                const dateTimeStr = `${dateStr} ${timeStr}`;
+                const timestamp = parseTimestamp(dateTimeStr);
+
+                if (isNaN(timestamp)) {
+                    console.warn('Row', i, '❌ Invalid timestamp:', dateTimeStr);
+                    continue;
+                }
+
+                // Create candlestick data object in TradingView format
+                // Use the actual high/low values from CSV, don't recalculate them
+                const candle = {
+                    time: timestamp,
+                    open: parseFloat(open.toFixed(5)),
+                    high: parseFloat(high.toFixed(5)),
+                    low: parseFloat(low.toFixed(5)),
+                    close: parseFloat(close.toFixed(5))
+                };
+
+                candleData.push(candle);
+
+                // Only log first 3 candles to avoid console spam
+                if (i < startRow + 3) {
+                    console.log('  ✅ Added candle:', candle);
+                }
+
+            } catch (error) {
+                console.warn('Row', i, '❌ Error parsing:', error.message);
+                continue;
+            }
+        }
+
+        // Sort chronologically by timestamp (ascending = oldest to newest)
+        candleData.sort((a, b) => a.time - b.time);
+
+        console.log('🟢 PARSING COMPLETE - Total candles extracted:', candleData.length);
+
+        if (candleData.length > 0) {
+            // Log detailed structure of first candle for debugging
+            const firstCandle = candleData[0];
+            const bodyTop = Math.max(firstCandle.open, firstCandle.close);
+            const bodyBottom = Math.min(firstCandle.open, firstCandle.close);
+            const bodyHeight = bodyTop - bodyBottom;
+            const upperWick = firstCandle.high - bodyTop;
+            const lowerWick = bodyBottom - firstCandle.low;
+
+            console.log('📊 FIRST CANDLE STRUCTURE:');
+            console.log('  Time:', new Date(firstCandle.time * 1000).toISOString());
+            console.log('  High:', firstCandle.high);
+            console.log('  Open:', firstCandle.open);
+            console.log('  Close:', firstCandle.close);
+            console.log('  Low:', firstCandle.low);
+            console.log('  ---');
+            console.log('  Body Top:', bodyTop, '(max of open/close)');
+            console.log('  Body Bottom:', bodyBottom, '(min of open/close)');
+            console.log('  Body Height:', bodyHeight);
+            console.log('  Upper Wick Length:', upperWick, '(high - body top)');
+            console.log('  Lower Wick Length:', lowerWick, '(body bottom - low)');
+            console.log('  Color:', firstCandle.close > firstCandle.open ? 'GREEN (up)' : 'RED (down)');
+        }
+
+        console.log('Parsed candlestick data:', {
+            totalCandles: candleData.length,
+            timeRange: candleData.length > 0 ? {
+                start: new Date(candleData[0].time * 1000).toISOString(),
+                end: new Date(candleData[candleData.length - 1].time * 1000).toISOString()
+            } : null,
+            sampleCandles: candleData.slice(0, 3)
+        });
+
+        return candleData.length > 0 ? candleData : null;
+    };
+
+    // Helper function to parse various timestamp formats
+    const parseTimestamp = (timeStr) => {
+        // If already a Unix timestamp (large number)
+        if (/^\d{10}$/.test(timeStr)) {
+            return parseInt(timeStr);
+        }
+
+        // Try parsing MT5 format: YYYY.MM.DD HH:MM:SS or YYYY.MM.DD HH:MM
+        if (timeStr.includes('.')) {
+            try {
+                // Replace dots with dashes for Date parsing
+                const dateTime = timeStr.replace(/\./g, '-');
+                return Math.floor(new Date(dateTime).getTime() / 1000);
+            } catch (e) {
+                console.warn('Failed to parse MT5 format:', timeStr);
+            }
+        }
+
+        // Try ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
+        if (timeStr.includes('-') || timeStr.includes('T')) {
+            try {
+                return Math.floor(new Date(timeStr).getTime() / 1000);
+            } catch (e) {
+                console.warn('Failed to parse ISO format:', timeStr);
+            }
+        }
+
+        // Try Unix millisecond timestamp
+        if (/^\d{13}$/.test(timeStr)) {
+            return Math.floor(parseInt(timeStr) / 1000);
+        }
+
+        // Default: try native Date parsing
+        try {
+            return Math.floor(new Date(timeStr).getTime() / 1000);
+        } catch (e) {
+            console.error('Could not parse timestamp:', timeStr);
+            return NaN;
+        }
+    };
+
+
+    // Handle CSV file upload
+    const handleCSVUpload = async (event) => {
+        const file = event.target.files[0];
+        const statusEl = document.getElementById('uploadStatus');
+
+        if (!file) {
+            statusEl.textContent = '';
+            return;
+        }
+
+        // Ensure chart is ready
+        await ensureChartReady();
+
+        // Check if chart is initialized
+        if (!chart || !candleSeries) {
+            statusEl.textContent = '❌ Error: Chart not initialized. Please refresh the page.';
+            statusEl.classList.add('upload-error');
+            console.error('Chart not initialized after wait:', { chart, candleSeries });
+            return;
+        }
+
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            statusEl.textContent = '❌ Error: Please upload a CSV file';
+            statusEl.classList.add('upload-error');
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            try {
+                const csvText = e.target.result;
+                const parsedData = parseCSV(csvText);
+
+                if (!parsedData || parsedData.length === 0) {
+                    statusEl.textContent = '❌ Error: No valid OHLC data found in CSV';
+                    statusEl.classList.add('upload-error');
+                    return;
+                }
+
+                // Store uploaded data locally for instant preview (M1 only)
+                uploadedData = parsedData;
+                console.log('✅ Local preview set from upload:', uploadedData.length, 'candles');
+
+                // Save to localStorage (M1 only fallback)
+                try {
+                    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(parsedData));
+                    localStorage.setItem(STORAGE_KEY_TIMEFRAME, currentTimeframe);
+                } catch (e) {
+                    console.warn('Failed to save to localStorage:', e);
+                }
+
+                // Initialize replay controls
+                initializeReplayControls(uploadedData.length);
+
+                // Update chart (windowed safe render)
+                if (candleSeries && chart) {
+                    applyReplaySlice();
+                    chart.timeScale().scrollToRealTime();
+
+
+                    // Start polling for backend hierarchical processing
+                    statusEl.textContent = `🔄 Uploading... Backend is pre-calculating all timeframes hierarchically...`;
+                    statusEl.classList.remove('upload-error');
+                    startStatusPolling();
+                }
+            } catch (error) {
+                console.error('CSV parsing error:', error);
+                statusEl.textContent = `❌ Error: ${error.message}`;
+                statusEl.classList.add('upload-error');
+            }
+        };
+
+        reader.onerror = () => {
+            statusEl.textContent = '❌ Error: Could not read file';
+            statusEl.classList.add('upload-error');
+        };
+
+        reader.readAsText(file);
+    };
+
+    // --- Status Polling Logic ---
+    let pollingInterval = null;
+    const startStatusPolling = () => {
+        if (pollingInterval) clearInterval(pollingInterval);
+        pollingInterval = setInterval(checkStatus, 3000);
+        checkStatus();
+    };
+
+    const checkStatus = () => {
+        fetch('/api/mt5-status')
+            .then(res => res.json())
+            .then(data => {
+                const statusEl = document.getElementById('uploadStatus');
+                const state = data.state || data.status; // Support both for safety
+
+                if (state === 'READY') {
+                    console.log('✅ Hierarchical processing READY.');
+                    clearInterval(pollingInterval);
+                    // Fetch the current timeframe for the active symbol
+                    loadTimeframeData(activeSymbol, currentTimeframe);
+                    statusEl.textContent = `✅ Symbol ${activeSymbol} is ready across all timeframes!`;
+                } else if (state === 'PROCESSING') {
+                    statusEl.textContent = `⏳ Building hierarchical cache for ${activeSymbol}...`;
+                } else if (state === 'ERROR') {
+                    clearInterval(pollingInterval);
+                    statusEl.textContent = `❌ Error: ${data.message}`;
+                }
+            })
+            .catch(e => console.error('Status polling failed:', e));
+    };
+
+    // Helper to normalize TF strings (handle 1M vs M1 etc)
+    const normalizeTF = (tf) => {
+        return tf.replace('1M', 'M1').replace('3M', 'M3').replace('5M', 'M5')
+            .replace('15M', 'M15').replace('30M', 'M30')
+            .replace('1H', 'H1').replace('2H', 'H2').replace('4H', 'H4')
+            .replace('1D', 'D1').replace('1W', 'W1');
+    };
+
+    // --- Availability & Overlay Helpers (Global) ---
+    async function loadSymbolMeta(symbol) {
+        try {
+            const res = await fetch(`/api/symbol-meta/${symbol}`);
+            if (!res.ok) return { available_timeframes: [] };
+            return await res.json();
+        } catch (e) {
+            console.warn('Failed to load symbol meta:', e);
+            return { available_timeframes: [] };
+        }
+    }
+
+    async function applyTFAvailability(symbol) {
+        if (!symbol) return;
+        const meta = await loadSymbolMeta(symbol);
+        AVAILABLE_TFS = meta.available_timeframes || [];
+        console.log('✅ Available TFs:', AVAILABLE_TFS);
+
+        document.querySelectorAll('.chart-btn').forEach(btn => {
+            const tf = btn.dataset.timeframe;
+            // Only disable if we actually have data (don't disable everything on error)
+            if (!tf || AVAILABLE_TFS.length === 0) return;
+
+            const enabled = AVAILABLE_TFS.includes(tf);
+            btn.disabled = !enabled;
+            btn.style.opacity = enabled ? '1' : '0.35';
+            btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+            btn.title = enabled ? `Switch to ${tf}` : `${tf} data not available`;
+        });
+    }
+
+    function showNoDataOverlay(tf) {
+        const overlay = document.getElementById('noDataOverlay');
+        if (overlay) {
+            overlay.textContent = `No data available for ${tf}`;
+            overlay.style.display = 'flex';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 1800);
+        }
+    }
+
+    // --- Timeframe Switching Logic (TradingView Style) ---
+    window.switchTimeframe = function (rawTw) {
+        const tf = normalizeTF(rawTw);
+        if (tf === currentTimeframe) return;
+
+        // 🛡️ Availability Guard
+        if (AVAILABLE_TFS.length > 0 && !AVAILABLE_TFS.includes(tf)) {
+            showNoDataOverlay(tf);
+            return;
+        }
+
+        console.log('🔄 TF SWITCH:', currentTimeframe, '→', tf);
+
+        // FIX 2: HARD RESET ON TF SWITCH
+        // Kill everything BEFORE loading to prevent overlap freeze
+        pauseReplay();
+        replay.active = false;
+
+        if (chart) {
+            chart.timeScale().resetTimeScale();
+        }
+
+        // Clear data instantly to prevent memory spike/flicker
+        if (candleSeries) {
+            candleSeries.setData([]);
+        }
+
+        // 1. Capture View Range (Only for metadata, reset handled load-side)
+        const viewRange = chart ? chart.timeScale().getVisibleRange() : null;
+
+        let preservedReplayTime = null;
+        if (uploadedData && replay.cursorIndex > 0) {
+            preservedReplayTime = uploadedData[Math.min(replay.cursorIndex, uploadedData.length - 1)].time;
+        }
+
+        currentTimeframe = tf;
+        localStorage.setItem(STORAGE_KEY_TIMEFRAME, tf);
+
+        document.querySelectorAll('.chart-controls .chart-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.timeframe === tf);
+        });
+
+        // ⛔ IGNORE cursorTime ON TF SWITCH
+        loadTimeframeData(
+            activeSymbol,
+            tf,
+            viewRange,
+            preservedReplayTime,
+            false
+        );
+    };
+
+    // --- Data Loading Logic ---
+    const loadTimeframeData = (
+        symbol,
+        tf,
+        preservedRange = null,
+        replayTime = null,
+        autoPlay = false,
+        ignoreBacktestClock = false
+    ) => {
+        if (!symbol) return;
+        const statusEl = document.getElementById('uploadStatus');
+        if (statusEl) statusEl.textContent = `⏳ Loading ${symbol} (${tf.toUpperCase()})...`;
+
+        const url = `/api/mt5-data/${symbol}/${tf}`;
+
+        // FIX: Replay slicing is handled client-side by initReplayUI/replacingReplayState
+        // Backend now always returns FULL DATASET to prevent M1/M5 cutoff issues
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error('Data not found');
+                return res.json();
+            })
+            .then(data => {
+                // FIX: Guard against empty data to prevent chart wiping
+                // FIX: Guard against empty data to prevent chart wiping
+                if (!data.candles || data.candles.length === 0) {
+                    console.warn(`No data for TF ${tf}`);
+                    showNoDataOverlay(tf);
+                    return; // STOP — do NOT touch chart
+                }
+
+                uploadedData = data.candles;
+
+                // FIX 3: TWO-STAGE LOAD (NO FREEZE GUARANTEE)
+                // Stage 1: Instant preview (fast)
+                const previewSlice = uploadedData.slice(-PREVIEW_COUNT);
+                safeRender(candleSeries, previewSlice, true);
+
+                // Stage 2: Full windowed render (async/deferred)
+                setTimeout(() => {
+                    const fullSlice = (uploadedData.length > MAX_RENDER)
+                        ? uploadedData.slice(-MAX_RENDER)
+                        : uploadedData;
+
+                    safeRender(candleSeries, fullSlice);
+
+                    // Replay Initialization
+                    if (replayTime) {
+                        replacingReplayState(replayTime, autoPlay);
+                    } else {
+                        replay.active = false;
+                        replay.cursorIndex = 0;
+                        initReplayUI();
+                    }
+
+                    // Restore view state if preserved
+                    if (preservedRange) {
+                        chart.timeScale().setVisibleRange(preservedRange);
+                    } else {
+                        candleSeries.priceScale().applyOptions({ autoScale: true });
+                        chart.timeScale().scrollToRealTime(); // FIX 5: Use scrollToRealTime (fast)
+
+                        chart.timeScale().applyOptions({
+                            rightOffset: 20,
+                            barSpacing: 10
+                        });
+                    }
+                }, 50);
+
+                if (statusEl) statusEl.textContent = `✅ ${symbol} - ${tf.toUpperCase()} loaded`;
+
+                // FIX: Initialize Backtest Clock safely (Only if not in Replay)
+                if (!cursorTime && !replay.active && uploadedData.length > 0) {
+                    const lastCandleTs = uploadedData[uploadedData.length - 1].time;
+                    initializeBacktestClock(symbol, lastCandleTs, tf);
+                }
+            })
+            .catch(err => {
+                console.warn('Failed to fetch data:', err);
+                if (statusEl) statusEl.textContent = `❌ Failed to load ${tf} data`;
+            });
+    };
+
+    const initializeBacktestClock = (symbol, startTime, tf) => {
+        cursorTime = startTime;
+        fetch('/api/backtest/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, start_time: startTime, timeframe: tf })
+        })
+            .then(res => res.json())
+            .then(data => console.log('🕒 Backtest clock initialized:', data));
+    };
+
+    // ==================== TRADINGVIEW-STYLE REPLAY ENGINE (Frontend Only) ====================
+
+    let replay = {
+        active: false,
+        cursorIndex: 0,
+        speed: 1.0,
+        timer: null,
+        autoScroll: true,
+        totalCandles: 0,
+        isCutMode: false // New: Selection mode
+    };
+
+    // 1️⃣ ENTER/TOGGLE REPLAY MODE
+    // 1️⃣ ENTER/TOGGLE REPLAY MODE
+    window.toggleReplay = function () {
+        if (!replay.active) {
+            // Start fresh
+            window.startReplay();
+        } else {
+            // Already active, toggle timer
+            if (replay.timer) {
+                window.pauseReplay();
+            } else {
+                window.playReplay();
+            }
+        }
+    };
+
+    window.startReplay = function () {
+        if (!uploadedData || uploadedData.length < 5) {
+            console.warn('Not enough data for replay');
+            return;
+        }
+
+        // Initialize State
+        replay.active = true;
+        replay.totalCandles = uploadedData.length;
+        // Start at 20% if not already set, or keep current if valid
+        if (replay.cursorIndex === 0) {
+            replay.cursorIndex = Math.max(20, Math.floor(uploadedData.length * 0.2));
+        }
+        replay.autoScroll = true;
+
+        // Apply initial slice (windowed)
+        applyReplaySlice();
+
+        // FIX 5: Banned fitContent() for dense data
+        // chart.timeScale().fitContent(); 
+        chart.timeScale().scrollToRealTime();
+
+
+        updateReplayUI();
+
+        // Auto-play on start
+        window.playReplay();
+    };
+
+    // 2️⃣ PLAY LOOP
+    window.playReplay = function () {
+        if (!replay.active) return; // Must be initialized first
+        if (replay.timer) return;   // Already playing
+
+        const playBtn = document.getElementById('replayPlayBtn');
+        playBtn.textContent = '⏸ Pause';
+        playBtn.classList.add('playing');
+
+        replay.timer = setInterval(() => {
+            if (replay.cursorIndex >= uploadedData.length) {
+                pauseReplay();
+                return;
+            }
+
+            replay.cursorIndex++;
+            applyReplaySlice();
+
+            // Smart Auto-Scroll
+            if (replay.autoScroll) {
+                chart.timeScale().scrollToRealTime();
+            }
+
+            updateReplayUI();
+        }, 500 / replay.speed);
+    };
+
+    // PAUSE
+    window.pauseReplay = function () {
+        if (replay.timer) {
+            clearInterval(replay.timer);
+            replay.timer = null;
+        }
+
+        const playBtn = document.getElementById('replayPlayBtn');
+        if (playBtn) {
+            playBtn.textContent = '▶ Play';
+            playBtn.classList.remove('playing');
+        }
+    };
+
+    // 3️⃣ NEXT STEP
+    window.nextCandle = function () {
+        if (!replay.active) startReplay();
+        pauseReplay(); // Manual step implies pausing auto-play
+
+        if (replay.cursorIndex < uploadedData.length) {
+            replay.cursorIndex++;
+            applyReplaySlice();
+
+            // User request: Do NOT readjust chart on Next
+            // Just append data, let user control view
+            // if (replay.autoScroll) {
+            //    chart.timeScale().scrollToRealTime();
+            // }
+
+            updateReplayUI();
+        }
+    };
+
+    // 4️⃣ RESET
+    // 4️⃣ RESET
+    window.resetReplay = function () {
+        window.pauseReplay();
+        if (!uploadedData) return;
+
+        replay.active = true;
+        // Reset to END of chart (Live View)
+        replay.cursorIndex = uploadedData.length;
+        replay.autoScroll = true;
+
+        // Show all data (optimized with windowing)
+        applyReplaySlice();
+        chart.timeScale().scrollToRealTime(); // Jump to end
+
+        updateReplayUI();
+    };
+
+    // 5️⃣ INIT UI (Restores Visibility)
+    function initReplayUI(replayTime = null, autoPlay = false) {
+        if (!uploadedData || uploadedData.length === 0) return;
+
+        const controls = document.getElementById('replayControls');
+        if (controls) controls.style.display = 'flex';
+
+        // Case A: Fresh Load (Show Full Chart)
+        if (!replayTime) {
+            if (!replay.active) {
+                replay.cursorIndex = uploadedData.length;
+                applyReplaySlice(); // Show FULL history (windowed)
+            }
+        }
+        // Case B: Switching Timeframe in Replay
+        else {
+            replacingReplayState(replayTime, autoPlay);
+        }
+
+        updateReplayUI();
+    }
+
+
+
+    // Helper to restore state after timeframe switch
+    function replacingReplayState(timestamp, shouldPlay) {
+        // Find nearest candle
+        let index = uploadedData.findIndex(c => c.time >= timestamp);
+        if (index === -1) index = uploadedData.length - 1; // Fallback to end if time is future
+
+        replay.active = true;
+        replay.cursorIndex = index;
+        replay.autoScroll = true;
+
+        // Apply slice
+        applyReplaySlice();
+        // chart.timeScale().scrollToRealTime(); // Removed: Let loadTimeframeData handle view restoration
+
+        if (shouldPlay) {
+            window.playReplay();
+        }
+    }
+
+    // 6️⃣ SPEED CONTROL
+    window.updateReplaySpeed = function (speed) {
+        replay.speed = parseFloat(speed);
+        document.getElementById('replaySpeedValue').textContent = speed + 'x';
+
+        // Restart timer if playing to apply new speed
+        if (replay.timer) {
+            pauseReplay();
+            playReplay();
+        }
+    };
+
+    // 7️⃣ UI SYNC
+    function updateReplayUI() {
+        const text = document.getElementById('replayProgressText');
+        const fill = document.getElementById('replayProgressFill');
+        if (uploadedData) {
+            text.textContent = `${replay.cursorIndex} / ${uploadedData.length}`;
+            const pct = (replay.cursorIndex / uploadedData.length) * 100;
+            fill.style.width = `${pct}%`;
+        }
+    }
+
+    // Cut Mode Toggle (UI Only)
+    window.toggleReplayCutMode = function () {
+        replay.isCutMode = !replay.isCutMode; // Attach isCutMode to replay object
+        const btn = document.getElementById('replayCutBtn');
+        const toast = document.getElementById('cutModeToast');
+
+        if (replay.isCutMode) {
+            btn.style.color = '#3b82f6';
+            btn.style.background = 'rgba(59, 130, 246, 0.1)';
+            document.body.style.cursor = 'crosshair';
+            toast.style.opacity = '1';
+            pauseReplay(); // Pause when cutting
+        } else {
+            btn.style.color = '';
+            btn.style.background = '';
+            document.body.style.cursor = '';
+            toast.style.opacity = '0';
+        }
+    };
+
+    // JUMP TO TIME (Frontend Only - Instant)
+    window.jumpToTime = function (timestamp) {
+        if (!uploadedData) return;
+
+        // Find index of this timestamp
+        const index = uploadedData.findIndex(c => c.time >= timestamp);
+
+        if (index !== -1) {
+            // Logic: Set cursor to this index
+            // Replay mode MUST be active to slice
+            if (!replay.active) replay.active = true;
+
+            replay.cursorIndex = index;
+            replay.autoScroll = true; // Reset scroll on jump
+
+            applyReplaySlice();
+
+            // Turn off cut mode
+            if (replay.isCutMode) window.toggleReplayCutMode();
+
+            updateReplayUI();
+            console.log('✂️ Jumped to index:', index, 'Time:', new Date(timestamp * 1000).toLocaleString());
+        }
+    };
+
+    // HANDLE PROGRESS BAR CLICK
+    window.handleProgressBarClick = function (e) {
+        if (!uploadedData) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const pct = Math.max(0, Math.min(1, x / rect.width));
+
+        const targetIndex = Math.floor(pct * uploadedData.length);
+
+        replay.active = true;
+        replay.cursorIndex = targetIndex;
+
+        // FIX: Always windowed, no direct setData
+        applyReplaySlice();
+        updateReplayUI();
+    };
+
+
+
+    // Update progress text
+    // const updateReplayProgress = () => { // Removed, replaced by updateReplayUI
+    //     const textEl = document.getElementById('replayProgressText');
+    //     if (textEl && cursorTime) {
+    //         const date = new Date(cursorTime * 1000);
+    //         textEl.textContent = date.toISOString().replace('T', ' ').substring(0, 16);
+    //     }
+    // };
+
+    // Sample OHLC data for demonstration
+
+
+    const generateSampleData = (count = 100) => {
+        const data = [];
+        const now = Math.floor(Date.now() / 1000);
+        let price = 100;
+
+        for (let i = count; i > 0; i--) {
+            const open = price + (Math.random() - 0.5) * 2;
+            const close = open + (Math.random() - 0.5) * 3;
+            const high = Math.max(open, close) + Math.random() * 2;
+            const low = Math.min(open, close) - Math.random() * 2;
+
+            data.push({
+                time: now - i * 60,
+                open: parseFloat(open.toFixed(2)),
+                high: parseFloat(high.toFixed(2)),
+                low: parseFloat(low.toFixed(2)),
+                close: parseFloat(close.toFixed(2))
+            });
+
+            price = close;
+        }
+
+        return data;
+    };
+
+    // --- Drawing State ---
+    let activeTool = 'cursor';
+    let drawings = []; // Persistent drawings: { type, ref, start, end, price }
+    let currentDrawing = null; // Temp drawing being made
+    let isMouseDown = false;
+    let drawStartPoint = null;
+
+    // --- Drawing Tools Logic ---
+    const setActiveTool = (tool) => {
+        activeTool = tool;
+        // Update UI
+        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`tool-${tool}`)?.classList.add('active');
+
+        // Change cursor icon
+        const container = document.getElementById('candleChart');
+        if (tool === 'cursor') {
+            container.style.cursor = 'crosshair';
+        } else {
+            container.style.cursor = 'cell';
+        }
+
+        // Disable/Enable chart scrolling/zooming when drawing
+        if (chart) {
+            chart.applyOptions({
+                handleScroll: {
+                    mouseWheel: tool === 'cursor',
+                    pressedMouseMove: tool === 'cursor',
+                    horzTouchDrag: tool === 'cursor',
+                    vertTouchDrag: tool === 'cursor',
+                },
+                handleScale: {
+                    mouseWheel: tool === 'cursor',
+                    axisPressedMouseMove: {
+                        time: true,
+                        price: true,
+                    },
+                },
+            });
+        }
+    };
+
+    const clearAllDrawings = () => {
+        if (!confirm('Clear all drawings?')) return;
+
+        drawings.forEach(d => {
+            if (d.type === 'horizline' && d.ref) {
+                candleSeries.removePriceLine(d.ref);
+            } else if (d.type === 'trendline' && d.ref) {
+                chart.removeSeries(d.ref);
+            }
+        });
+        drawings = [];
+        console.log('🗑️ All drawings cleared');
+    };
+
+    // Mouse Event Handlers for Drawing
+    const initDrawingEvents = () => {
+        const container = document.getElementById('candleChart');
+
+        container.addEventListener('mousedown', (e) => {
+            if (activeTool === 'cursor' || !chart || !candleSeries) return;
+
+            const box = container.getBoundingClientRect();
+            const x = e.clientX - box.left;
+            const y = e.clientY - box.top;
+
+            const time = chart.timeScale().coordinateToTime(x);
+            const price = candleSeries.coordinateToPrice(y);
+
+            if (time === null || price === null) return;
+
+            isMouseDown = true;
+            drawStartPoint = { time, price };
+
+            if (activeTool === 'horizline') {
+                const line = candleSeries.createPriceLine({
+                    price: price,
+                    color: '#00ff99',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: 'H-Line',
+                });
+                drawings.push({ type: 'horizline', price, ref: line });
+                isMouseDown = false; // Single click for horizontal
+            } else if (activeTool === 'trendline') {
+                const trendSeries = chart.addLineSeries({
+                    color: '#00ff99',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: false,
+                    autoscaleInfoProvider: () => null, // Don't affect scale
+                });
+                currentDrawing = { type: 'trendline', series: trendSeries, start: drawStartPoint };
+            }
+        });
+
+        container.addEventListener('mousemove', (e) => {
+            if (!isMouseDown || activeTool !== 'trendline' || !currentDrawing) return;
+
+            const box = container.getBoundingClientRect();
+            const x = e.clientX - box.left;
+            const y = e.clientY - box.top;
+
+            const time = chart.timeScale().coordinateToTime(x);
+            const price = candleSeries.coordinateToPrice(y);
+
+            if (time === null || price === null) return;
+
+            // Update trendline preview
+            currentDrawing.series.setData([
+                { time: currentDrawing.start.time, value: currentDrawing.start.price },
+                { time: time, value: price }
+            ]);
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (!isMouseDown) return;
+            isMouseDown = false;
+
+            if (activeTool === 'trendline' && currentDrawing) {
+                const container = document.getElementById('candleChart');
+                const box = container.getBoundingClientRect();
+                const x = e.clientX - box.left;
+                const y = e.clientY - box.top;
+
+                const time = chart.timeScale().coordinateToTime(x);
+                const price = candleSeries.coordinateToPrice(y);
+
+                if (time !== null && price !== null && time !== currentDrawing.start.time) {
+                    drawings.push({
+                        type: 'trendline',
+                        start: currentDrawing.start,
+                        end: { time, price },
+                        ref: currentDrawing.series
+                    });
+                    console.log('📈 Trend line added');
+                } else {
+                    chart.removeSeries(currentDrawing.series);
+                }
+                currentDrawing = null;
+            }
+        });
+    };
+
+    // Initialize chart
+    const initChart = () => {
+        const chartContainer = document.getElementById('candleChart');
+
+        chart = LightweightCharts.createChart(chartContainer, {
+            layout: {
+                background: { color: 'transparent' },
+                textColor: '#d1d4dc',
+                fontSize: 12,
+            },
+            width: chartContainer.clientWidth,
+            height: 600,
+            timeScale: {
+                visible: true,
+                timeVisible: true,
+                secondsVisible: false,
+                borderColor: 'rgba(255, 255, 255, 0.2)', // Increased visibility
+                borderVisible: true,
+                shiftVisibleRangeOnNewBar: true,
+            },
+            grid: {
+                vertLines: { color: 'rgba(0, 0, 0, 0)' },
+                horzLines: { color: 'rgba(0, 0, 0, 0)' }
+            },
+            handleScale: {
+                mouseWheel: true,
+                axisPressedMouseMove: {
+                    time: true,  // Allow scaling time axis
+                    price: true, // Allow scaling price axis
+                },
+            },
+            handleScroll: {
+                mouseWheel: true,
+                pressedMouseMove: true,
+                horzTouchDrag: true,
+                vertTouchDrag: true,
+            },
+            rightPriceScale: {
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                visible: true,
+                autoScale: false, // Keep it unlocked for dragging
+                mode: LightweightCharts.PriceScaleMode.Normal,
+                textColor: '#d1d4dc', // RESTORE LABELS (User needs to see prices)
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.1,
+                },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+                vertLine: {
+                    labelBackgroundColor: '#2563eb',
+                },
+                horzLine: {
+                    labelBackgroundColor: '#2563eb',
+                    labelVisible: false,
+                },
+            },
+        });
+
+        // 🛡️ Robust Automatic Resizing (Fixes clipping in Fullscreen/Resize)
+        const forceChartResize = () => {
+            const container = document.getElementById('candleChart');
+            if (!container || !chart) return;
+            const { width, height } = container.getBoundingClientRect();
+            chart.applyOptions({ width, height });
+        };
+
+        // 1. Observer
+        const resizeObserver = new ResizeObserver(entries => {
+            if (entries.length === 0 || !chart) return;
+            // Use getBoundingClientRect for more precision
+            forceChartResize();
+        });
+        resizeObserver.observe(chartContainer);
+
+        // 2. Window Resize Fallback
+        window.addEventListener('resize', forceChartResize);
+
+        // 3. Expose to global for manual calls
+        window.forceResize = forceChartResize;
+
+        // 🛑 AUTO-SCROLL DISABLE HANDLER (User pan stops autoscroll)
+        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+            if (replay.active && replay.timer) { // Updated to new replay object
+                // If the chart is NOT shifted right, disable autoscroll
+                const scrollPos = chart.timeScale().scrollPosition();
+                // If user scrolls left (scrollPos becomes positive) or significantly away from right edge
+                // This is a heuristic, a more robust solution would involve tracking user interaction directly.
+                // For now, if the right edge is not near the "real time" end, assume user scrolled.
+                const logicalRange = chart.timeScale().getVisibleLogicalRange();
+                if (logicalRange && uploadedData && uploadedData.length > 0) {
+                    const lastBarLogical = chart.timeScale().timeToLogical(uploadedData[uploadedData.length - 1].time);
+                    // If the right edge of the visible range is more than 5 bars away from the last bar
+                    if (lastBarLogical && (logicalRange.to < lastBarLogical - 5)) {
+                        replay.autoScroll = false;
+                    }
+                }
+            }
+        });
+
+        // Actually, let's add the subscription cleanly separate:
+        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+            // In a real implementation, we'd detect if the change was user-initiated.
+            // For this MVP, we will rely on the Replay Loop forcing .scrollToRealTime() only if replay.autoScroll is true.
+            // If the user scrolls BACK, we should set replay.autoScroll = false.
+            // How to detect? 
+            // If the range end is significantly far from the last bar.
+        });
+
+        // Create candlestick series
+        candleSeries = chart.addCandlestickSeries({
+            upColor: '#00ff99',
+            downColor: '#ff4444',
+            borderUpColor: '#00ff99',
+            borderDownColor: '#ff4444',
+            wickUpColor: '#00ff99',
+            wickDownColor: '#ff4444',
+            priceLineVisible: true, // RESTORED: User wants it back
+            lastValueVisible: true,
+            priceLineWidth: 1,
+            priceLineColor: '#2563eb',
+        });
+
+        // REMOVED: Custom Price Axis (caused duplicates)
+        // updatePriceAxis used to be here. Now using native labels.
+
+        // Initialize Drawing Events
+        initDrawingEvents();
+
+        // 🔥 Optimization: Direct Hierarchical Load
+        const ALLOWED_TFS = ["M1", "M3", "M5", "M15", "M30", "H1", "H2", "H4", "D1", "W1"];
+        let savedTimeframe = localStorage.getItem(STORAGE_KEY_TIMEFRAME);
+
+        // Validate saved timeframe against allowed list
+        if (!savedTimeframe || !ALLOWED_TFS.includes(savedTimeframe.toUpperCase())) {
+            console.log(`⚠️ Legacy/Invalid timeframe detected (${savedTimeframe}), defaulting to M5`);
+            savedTimeframe = 'M5';
+            localStorage.setItem(STORAGE_KEY_TIMEFRAME, savedTimeframe);
+        }
+
+        currentTimeframe = savedTimeframe;
+
+        if (activeSymbol) {
+            console.log(`⚡ Initial load for ${activeSymbol} (${currentTimeframe})`);
+            loadTimeframeData(activeSymbol, currentTimeframe);
+
+            // Check if we need to poll for initial processing
+            if ("{{ processing_status }}" === "PROCESSING") {
+                startStatusPolling();
+            }
+        } else {
+            loadFromLocal();
+        }
+
+        function loadFromLocal() {
+            const savedData = loadSavedData();
+            if (savedData) {
+                uploadedData = savedData;
+                candleSeries.setData(savedData);
+            } else {
+                const data = generateSampleData(100);
+                uploadedData = data; // FIX: Assign to global variable
+                candleSeries.setData(data);
+            }
+
+            // FIX: Initialize controls so they appear
+            initReplayUI();
+
+            const btnTf = document.querySelector(`[data-timeframe="${currentTimeframe}"]`);
+            if (btnTf) btnTf.classList.add('active');
+        }
+
+
+        // Fit content to view
+        chart.timeScale().fitContent();
+
+        // 🔥 enable click on time axis (TradingView style)
+        enableTimeAxisClick();
+
+        // 🎹 Enable modifier keys for zoom (Ctrl=Time, Shift=Price)
+        enableModifierWheelZoom();
+
+        // 🔓 Force-unlock all interactions (no lock toggle)
+        chart.applyOptions({
+            handleScroll: {
+                mouseWheel: true,
+                pressedMouseMove: true,
+                horzTouchDrag: true,
+                vertTouchDrag: true,
+            },
+            handleScale: {
+                mouseWheel: true,
+                axisPressedMouseMove: {
+                    time: true,
+                    price: true,
+                },
+            },
+        });
+
+        // Initialize Drawing Events
+        initDrawingEvents();
+    };
+
+    const enableTimeAxisClick = () => {
+        const chartEl = document.getElementById('candleChart');
+        if (!chartEl) return;
+
+        chartEl.addEventListener('mousedown', (e) => {
+            // Ignore if dragging or not left click
+            if (e.buttons !== 1) return;
+
+            const rect = chartEl.getBoundingClientRect(); // Define rect here
+            const x = e.clientX - rect.left; // Define x here
+            const y = e.clientY - rect.top; // Define y here
+
+            // --- REPLAY CUT MODE INTERCEPT ---
+            if (replay && replay.isCutMode) {
+                const time = chart.timeScale().coordinateToTime(x);
+                if (time) {
+                    jumpToTime(time);
+                    e.stopImmediatePropagation(); // Prevent other clicks
+                    return;
+                }
+            }
+
+            // Only bottom area = time axis (last ~30px)
+            if (y < rect.height - 30) return;
+
+            // Ensure chart exists
+            if (!chart || !chart.timeScale()) return;
+
+            // const x is already defined above
+            const time = chart.timeScale().coordinateToTime(x);
+
+            if (time === null) return;
+
+            // TradingView-style: adjust visible range to center clicked time
+            const logical = chart.timeScale().timeToLogical(time);
+            if (logical === null) return;
+
+            // Simple center logic: keep current range size but shift 'from' index
+            const currentRange = chart.timeScale().getVisibleLogicalRange();
+            if (!currentRange) return;
+
+            const rangeWidth = currentRange.to - currentRange.from;
+            const newFrom = logical - (rangeWidth / 2);
+
+            chart.timeScale().scrollToPosition(newFrom, false);
+            console.log('⚡ Time Jump to:', time);
+        });
+    };
+
+    const enableModifierWheelZoom = () => {
+        const chartEl = document.getElementById('candleChart');
+        if (!chartEl || !chart) return;
+
+        chartEl.addEventListener(
+            'wheel',
+            (e) => {
+                // Ignore if drawing tool active
+                if (activeTool !== 'cursor') return;
+
+                const isCtrl = e.ctrlKey;
+                const isShift = e.shiftKey;
+
+                // 1. If modifiers pressed, INTERCEPT native behavior
+                if (isCtrl || isShift) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // CTRL + WHEEL → MANUAL TIME ZOOM
+                    if (isCtrl) {
+                        const timeScale = chart.timeScale();
+                        const range = timeScale.getVisibleLogicalRange();
+                        if (!range) return;
+
+                        const width = range.to - range.from;
+                        const sign = Math.sign(e.deltaY);
+                        const zoomFactor = 0.1; // 10% zoom per tick
+
+                        // Calculate new range width
+                        // Zoom Out (delta > 0) -> Increase Width
+                        // Zoom In (delta < 0) -> Decrease Width
+                        const deltaWidth = width * zoomFactor * sign;
+                        const newWidth = width + deltaWidth;
+
+                        // Keep center focus
+                        const center = range.from + width / 2;
+                        const newFrom = center - newWidth / 2;
+                        const newTo = center + newWidth / 2;
+
+                        timeScale.setVisibleLogicalRange({ from: newFrom, to: newTo });
+                        return;
+                    }
+
+                    // SHIFT + WHEEL → SAFE BLOCK (User wants Price Zoom)
+                    // Since Manual Price Zoom on Body is not natively exposed API-side,
+                    // we block Time Zoom so user doesn't get disoriented.
+                    // User should use Right Axis Wheel for Price Zoom.
+                    if (isShift) {
+                        // Optional: Show toast "Use Right Axis to Zoom Price"
+                    }
+                }
+            },
+            { passive: false }
+        );
+    };
+
+    // Manual ESC listener for Windowed Fullscreen
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.body.classList.contains('is-chart-fullscreen')) {
+            toggleFullscreen();
+        }
+    });
+
+    let idleTimer = null;
+    const IDLE_TIME = 3000; // 3 seconds
+
+    const resetIdleTimer = () => {
+        // Use native fullscreen check for logic
+        if (!document.fullscreenElement) return;
+
+        const controls = document.querySelector('.chart-controls');
+        const replay = document.querySelector('.replay-controls');
+
+        // Ensure elements exist before trying to access classList
+        if (!controls || !replay) return;
+
+        controls.classList.remove('hidden');
+        replay.classList.remove('hidden');
+
+        if (idleTimer) clearTimeout(idleTimer);
+
+        idleTimer = setTimeout(() => {
+            if (document.fullscreenElement) {
+                controls.classList.add('hidden');
+                replay.classList.add('hidden');
+            }
+        }, IDLE_TIME);
+    };
+
+    // --- NATIVE FULLSCREEN LOGIC (Hides Browser UI) ---    
+    function toggleFullscreen() {
+        const container = document.querySelector('.chart-container');
+        if (!container) return;
+
+        if (!document.fullscreenElement) {
+            // ENTER FULLSCREEN (Native)
+            console.log("🌐 Attempting Native Fullscreen...");
+            const enterFS = container.requestFullscreen || container.webkitRequestFullscreen || container.mozRequestFullScreen || container.msRequestFullscreen;
+
+            if (enterFS) {
+                enterFS.call(container).then(() => {
+                    document.body.classList.add('is-chart-fullscreen');
+                    console.log("✅ Entered Native Fullscreen");
+                    setTimeout(window.forceResize, 100);
+                    setTimeout(window.forceResize, 500);
+                }).catch(err => {
+                    console.error(`❌ Fullscreen Error: ${err.message}`);
+                    // Fallback to Windowed mode if native fails
+                    document.body.classList.add('is-chart-fullscreen');
+                    window.forceResize();
+                });
+            } else {
+                // Fallback for browsers with no FS API
+                document.body.classList.add('is-chart-fullscreen');
+                window.forceResize();
+            }
+        } else {
+            // EXIT FULLSCREEN
+            const exitFS = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+            if (exitFS) {
+                exitFS.call(document).then(() => {
+                    document.body.classList.remove('is-chart-fullscreen');
+                    console.log("✅ Exited Native Fullscreen");
+                    setTimeout(window.forceResize, 100);
+                });
+            } else {
+                document.body.classList.remove('is-chart-fullscreen');
+                window.forceResize();
+            }
+        }
+    }
+
+    // Listen for native fullscreen changes to keep state in sync
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+            document.body.classList.remove('is-chart-fullscreen');
+        } else {
+            document.body.classList.add('is-chart-fullscreen');
+        }
+        setTimeout(window.forceResize, 100);
+    });
+
+    // Keyboard Shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Only trigger if not typing in a search/input field
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+
+            // F Key for Toggle
+            if (e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                toggleFullscreen();
+            }
+        }
+    });
+
+
+    // Initialize on page load - wait for library to load
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('DOMContentLoaded event fired');
+
+        // Wait for LightweightCharts library to load
+        const waitForLibrary = setInterval(() => {
+            if (typeof LightweightCharts !== 'undefined') {
+                clearInterval(waitForLibrary);
+                console.log('✅ LightweightCharts library loaded');
+                initChart();
+                console.log('Chart initialized:', { chart: !!chart, candleSeries: !!candleSeries });
+            }
+        }, 100);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+            clearInterval(waitForLibrary);
+            if (typeof LightweightCharts === 'undefined') {
+                console.error('❌ Failed to load LightweightCharts library');
+            }
+        }, 5000);
+    });
+
+    // Toggle mode logic (kept from original)
+    setTimeout(() => {
+        const toggleEl = document.getElementById('backtestToggle');
+        if (!toggleEl) return;
+
+        const switchInstance = toggleEl.dataset.switchInstance;
+        if (!switchInstance) return;
+
+        const currentMode = '{{ current_user.account_type }}';
+        const isBacktest = (currentMode === 'backtest');
+        switchInstance.isOn = isBacktest;
+        switchInstance.updateUI();
+
+        console.log('Backtest toggle init. Current mode:', currentMode, 'isOn:', isBacktest);
+
+        toggleEl.addEventListener('toggle', (e) => {
+            const newIsOn = e.detail.isOn;
+            console.log('Toggle event: newIsOn =', newIsOn);
+            switchToMode(newIsOn);
+        });
+    }, 100);
+
+    function switchToMode(isOn) {
+        console.log('switchToMode called with isOn =', isOn);
+
+        fetch('{{ url_for("toggle_mode_api") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isOn: isOn })
+        })
+            .then(response => response.json())
+            .then(data => {
+                console.log('API response:', data);
+                if (isOn === true) {
+                    console.log('ON: Reloading backtesting page');
+                    setTimeout(() => location.reload(), 200);
+                } else {
+                    console.log('OFF: Redirecting to trading journal');
+                    setTimeout(() => window.location.href = '{{ url_for("dashboard") }}', 200);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+    // Initialize icons if lucide is available
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+</script>
+
+<!-- Load Cinematic Glow Toggle -->
+<script src="{{ url_for('static', filename='assets/js/cinematic-glow-toggle.js') }}"></script>
+
+{% endblock %}

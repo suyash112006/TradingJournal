@@ -1,0 +1,86 @@
+:root {
+    /* 🎨 FULL UI COLOR PALETTE (Matched to Image) */
+
+    /* 🖤 Base Backgrounds */
+    --bg-main: #06090D;
+    /* App background */
+    --bg-sidebar: #070B10;
+    /* Sidebar */
+    --bg-card: #0B0F14;
+    /* Cards */
+    --bg-card-top: #1A1D24;
+    /* Card gradient top */
+    --bg-hover: #0F1623;
+    /* Hover states */
+
+    /* 🧱 Borders & Dividers */
+    --border-soft: rgba(255, 255, 255, 0.05);
+    --border-strong: rgba(255, 255, 255, 0.08);
+
+    /* 🟢 Primary Accent (Neon Green) */
+    --primary: #22C55E;
+    /* Main green */
+    --primary-dark: #16A34A;
+    --primary-glow: rgba(34, 197, 94, 0.45);
+    --primary-soft: rgba(34, 197, 94, 0.12);
+
+    /* 🟣 Secondary Accent (Purple – Win Rate) */
+    --secondary: #A855F7;
+    --secondary-soft: rgba(168, 85, 247, 0.15);
+
+    /* 🔵 Icons / UI Highlights */
+    --icon-blue: #38BDF8;
+    --icon-bg: #0C1220;
+
+    /* ✍️ Text Colors */
+    --text-primary: #E5E7EB;
+    /* Main text */
+    --text-secondary: #9CA3AF;
+    /* Labels */
+    --text-muted: #6B7280;
+    /* Subtext */
+    --text-disabled: #4B5563;
+
+    /* 📈 Chart Colors */
+    --chart-line: #22C55E;
+    --chart-fill: rgba(34, 197, 94, 0.25);
+    --chart-grid: rgba(255, 255, 255, 0.04);
+
+    /* 🚪 Logout / Danger */
+    --danger: #EF4444;
+    --danger-soft: rgba(239, 68, 68, 0.15);
+
+    /* ✅ Exact Card Gradient */
+    --card-gradient: linear-gradient(180deg, var(--bg-card-top) 0%, var(--bg-card) 100%);
+
+    /* 🌟 Glow Effect (Used on Active Card) */
+    --card-glow-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4), 0 20px 40px rgba(0, 0, 0, 0.7);
+
+    /* 📏 Dimensions */
+    --radius-card: 16px;
+    --radius-sm: 8px;
+}
+
+/* Light Mode (Optional - Derived from inversions) */
+@media (prefers-color-scheme: light) {
+    /* You can override these via a .light-mode class on body if manual toggle is preferred */
+    /* :root.light-mode { ... } */
+}
+
+.light-mode {
+    --bg-main: #F3F4F6;
+    --bg-sidebar: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-card-top: #F9FAFB;
+    --bg-hover: #F3F4F6;
+
+    --border-soft: rgba(0, 0, 0, 0.05);
+    --border-strong: rgba(0, 0, 0, 0.1);
+
+    --text-primary: #111827;
+    --text-secondary: #4B5563;
+    --text-muted: #9CA3AF;
+    --text-disabled: #D1D5DB;
+
+    --card-gradient: linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%);
+}

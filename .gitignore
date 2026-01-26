@@ -1,0 +1,12 @@
+# Ignore ALL uploads & generated data
+uploads/
+instance/
+
+# Secrets
+.env
+
+# Node
+node_modules/
+
+# Python
+__pycache__/

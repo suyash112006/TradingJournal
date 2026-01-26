@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .analytics-card {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-default);
+        border-radius: 16px;
+        padding: 24px;
+        transition: transform 0.2s ease;
+    }
+
+    .analytics-card:hover {
+        border-color: var(--border-glow);
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+    }
+
+    .chart-title {
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+    }
+
+    .time-toggle {
+        background: #0b0b0f;
+        border: 1px solid var(--border-default);
+        color: var(--text-secondary);
+        padding: 8px 16px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        outline: none;
+        cursor: pointer;
+        appearance: none;
+        transition: all 0.2s;
+    }
+
+    .time-toggle:hover {
+        border-color: var(--border-glow);
+        color: var(--text-primary);
+    }
+
+    .performance-table th {
+        font-size: 10px;
+        letter-spacing: 1px;
+    }
+
+    .performance-table tr.profit td.pnl-cell {
+        color: var(--profit);
+        font-weight: 700;
+    }
+
+    .performance-table tr.loss td.pnl-cell {
+        color: var(--loss);
+        font-weight: 700;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title mb-8">Analytics</h1>
+
+<!-- Analytics Hero / Global Stats -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="analytics-card border-l-4 border-green-500/50">
+        <div class="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Gross Profit</div>
+        <div class="text-2xl font-bold text-[var(--profit)]">+{{ gross_profit | format_currency }}</div>
+        <div class="text-[10px] text-gray-600 mt-2 uppercase font-medium">All-time earnings</div>
+    </div>
+
+    <div class="analytics-card border-l-4 border-red-500/50">
+        <div class="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Gross Loss</div>
+        <div class="text-2xl font-bold text-[var(--loss)]">-{{ gross_loss | format_currency }}</div>
+        <div class="text-[10px] text-gray-600 mt-2 uppercase font-medium">All-time drawdown</div>
+    </div>
+
+    <div class="analytics-card border-l-4 border-blue-500/50">
+        <div class="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Profit Factor</div>
+        <div class="text-2xl font-bold text-blue-400">{{ profit_factor }}</div>
+        <div class="text-[10px] text-gray-600 mt-2 uppercase font-medium">Efficiency ratio</div>
+    </div>
+</div>
+
+<section class="analytics-card mb-8">
+    <div class="chart-header">
+        <h2 class="text-lg font-bold flex items-center gap-2">
+            <i data-lucide="line-chart" class="text-[var(--profit)]"></i>
+            Performance Analytics
+        </h2>
+
+        <select id="timeFilter" class="time-toggle">
+            <option value="all">All Time</option>
+            <option value="month">This Month</option>
+            <option value="week">This Week</option>
+        </select>
+    </div>
+
+    <div class="p-4 rounded-xl border border-gray-900">
+        <div class="chart-title mb-4">Equity Curve</div>
+        <div class="w-full h-[400px]">
+            <canvas id="equityChart" data-equity='{{ weekly_equity | tojson }}'
+                data-drawdown='{{ drawdown_data | tojson }}'></canvas>
+        </div>
+    </div>
+</section>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+    <!-- Left Column: Weekly Table -->
+    <div class="performance-card">
+        <h3>
+            <i data-lucide="calendar"></i>
+            Weekly Performance
+        </h3>
+        <div class="overflow-x-auto">
+            <table class="perf-table">
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Trades</th>
+                        <th>P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for w in weekly %}
+                    <tr>
+                        <td class="text-gray-400 font-medium">{{ w.week }}</td>
+                        <td>{{ w.trades }}</td>
+                        <td>
+                            <span class="pnl {{ 'profit' if w.pnl >= 0 else 'loss' }}">
+                                {{ w.pnl | format_currency }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center text-gray-500 py-8">No data available</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Right Column: Monthly Table -->
+    <div class="performance-card">
+        <h3>
+            <i data-lucide="bar-chart-2"></i>
+            Monthly Performance
+        </h3>
+        <div class="overflow-x-auto">
+            <table class="perf-table">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Trades</th>
+                        <th>P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in monthly %}
+                    <tr>
+                        <td class="text-gray-400 font-medium">{{ m.month }}</td>
+                        <td>{{ m.trades }}</td>
+                        <td>
+                            <span class="pnl {{ 'profit' if m.pnl >= 0 else 'loss' }}">
+                                {{ m.pnl | format_currency }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center text-gray-500 py-8">No data available</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chartEl = document.getElementById("equityChart");
+    const rawEquityData = JSON.parse(chartEl.dataset.equity);
+    const rawDrawdownData = JSON.parse(chartEl.dataset.drawdown);
+
+    const ctx = chartEl.getContext("2d");
+
+    // Format labels for Chart.js (e.g., "Jan 05")
+    const formatLabel = (dateStr) => {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+    };
+
+    const chartData = {
+        labels: rawEquityData.map(d => formatLabel(d.time)),
+        datasets: [
+            {
+                label: "Account Growth",
+                data: rawEquityData.map(d => d.value),
+                borderColor: "#00ff99",
+                backgroundColor: "rgba(0, 255, 153, 0.1)",
+                fill: true,
+                tension: 0.4,
+                pointRadius: 4,
+                pointBackgroundColor: "#00ff99",
+                yAxisID: 'y'
+            },
+            {
+                label: "Drawdown",
+                data: rawDrawdownData.map(d => d.value),
+                borderColor: "#ef4444",
+                backgroundColor: "rgba(239, 68, 68, 0.05)",
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                yAxisID: 'y1',
+                hidden: false
+            }
+        ]
+    };
+
+    const equityChart = new Chart(ctx, {
+        type: "line",
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#888', font: { size: 12 } }
+                },
+                tooltip: {
+                    backgroundColor: '#111',
+                    titleColor: '#fff',
+                    bodyColor: '#ccc',
+                    borderColor: '#333',
+                    borderWidth: 1
+                }
+            },
+            animation: {
+                duration: 1200,
+                easing: "easeOutQuart"
+            },
+            scales: {
+                x: {
+                    ticks: { color: "#666", font: { size: 11 } },
+                    grid: { display: false }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    ticks: {
+                        color: "#aaa",
+                        callback: function (value) { return '$' + value; }
+                    },
+                    grid: { color: "#1a1a1a" }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: { drawOnChartArea: false }, // only want the grid lines for one axis
+                    ticks: {
+                        color: "#ff3d00",
+                        callback: function (value) { return '$' + value; }
+                    }
+                }
+            }
+        }
+    });
+
+    // Time Filter Logic
+    document.getElementById("timeFilter").onchange = (e) => {
+        const value = e.target.value;
+        let filteredEquity = [...rawEquityData];
+        let filteredDD = [...rawDrawdownData];
+
+        const now = new Date();
+        if (value === 'month') {
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            filteredEquity = rawEquityData.filter(d => new Date(d.time) >= startOfMonth);
+            filteredDD = rawDrawdownData.filter(d => new Date(d.time) >= startOfMonth);
+        } else if (value === 'week') {
+            const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+            filteredEquity = rawEquityData.filter(d => new Date(d.time) >= startOfWeek);
+            filteredDD = rawDrawdownData.filter(d => new Date(d.time) >= startOfWeek);
+        }
+
+        equityChart.data.labels = filteredEquity.map(d => formatLabel(d.time));
+        equityChart.data.datasets[0].data = filteredEquity.map(d => d.value);
+        equityChart.data.datasets[1].data = filteredDD.map(d => d.value);
+        equityChart.update();
+    };
+</script>
+{% endblock %}

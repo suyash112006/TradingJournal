@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold">Admin Dashboard</h1>
+        <div class="px-4 py-2 bg-blue-900/20 border border-blue-500/30 rounded-lg text-blue-200">
+            Total Global Trades: {{ total_trades }}
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Verified</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.id }}</td>
+                    <td>{{ user.name }}</td>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>
+                        <span
+                            class="px-2 py-1 rounded text-xs {{ 'bg-purple-900/50 text-purple-200' if user.role == 'admin' else 'bg-gray-800 text-gray-400' }}">
+                            {{ user.role }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="{{ 'text-green-500' if user.verified else 'text-red-500' }}">
+                            {{ 'Yes' if user.verified else 'No' }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

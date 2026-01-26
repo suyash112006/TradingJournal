@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - TradeJournal</title>
+
+    <!-- 1. Include the Theme CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/theme.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Simple Icons (Optional) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body class="login-theme-body">
+
+    <!-- 
+      SECTION 1: BACKGROUND ANIMATIONS 
+    -->
+    <div class="background-layer">
+        <div class="bg-grid"></div>
+        <div id="theme-stars"></div>
+        <div id="theme-particles"></div>
+
+        <!-- Glowing Blobs -->
+        <div class="bg-blob blob-1"></div>
+        <div class="bg-blob blob-2"></div>
+        <div class="bg-blob blob-3"></div>
+
+        <!-- Dark Vignette -->
+        <div class="bg-vignette"></div>
+    </div>
+
+
+    <!-- 
+      SECTION 2: REGISTER CARD
+    -->
+    <div class="login-wrapper">
+        <div class="login-card-3d">
+            <div class="glass-panel">
+
+                <h1 class="theme-title">
+                    Trade<span class="theme-highlight">Journal</span>
+                </h1>
+                <p class="theme-subtitle">Join the elite trading community</p>
+
+                <!-- Flashed Messages for Errors -->
+                {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                <div class="alert-message">
+                    <i data-lucide="alert-circle" style="width: 18px; height: 18px;"></i>
+                    <span>{{ messages[0] }}</span>
+                </div>
+                {% endif %}
+                {% endwith %}
+
+                <!-- Register Form -->
+                <form method="POST">
+
+
+                    <!-- Email Input -->
+                    <div class="theme-input-group">
+                        <i data-lucide="mail" class="input-icon-left"></i>
+                        <input type="email" name="email" class="theme-input" placeholder="Email Address" required
+                            autocomplete="email">
+                    </div>
+
+                    <!-- Password Input -->
+                    <div class="theme-input-group">
+                        <i data-lucide="lock" class="input-icon-left"></i>
+                        <input type="password" name="password" id="password" class="theme-input"
+                            placeholder="Create Password" required autocomplete="new-password">
+                        <i data-lucide="eye" class="input-icon-right" onclick="togglePassword('password', this)"></i>
+                    </div>
+
+                    <!-- Confirm Password -->
+                    <div class="theme-input-group">
+                        <i data-lucide="check-circle" class="input-icon-left"></i>
+                        <input type="password" name="confirm_password" id="confirm_password" class="theme-input"
+                            placeholder="Confirm Password" required>
+                    </div>
+
+                    <!-- Account Type Selection -->
+                    <div class="theme-input-group">
+                        <i data-lucide="settings-2" class="input-icon-left"></i>
+                        <select name="account_type" class="theme-select" required>
+                            <option value="journal">Trading Journal</option>
+                            <option value="backtest">Backtesting Mode</option>
+                        </select>
+                    </div>
+
+                    <!-- Create Account Button -->
+                    <button type="submit" class="theme-btn">
+                        Sign Up
+                    </button>
+
+                </form>
+
+                <div style="margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: #71717a;">
+                    Already have an account? <a href="{{ url_for('index') }}" class="theme-link">Log In</a>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 2. Include the Theme JS -->
+    <script src="{{ url_for('static', filename='assets/js/animation.js') }}"></script>
+
+    <!-- Icon Script -->
+    <script>
+        lucide.createIcons();
+    </script>
+
+</body>
+
+</html>

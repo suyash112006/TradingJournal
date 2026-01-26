@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log In - TradeJournal</title>
+
+  <!-- 1. Include the Theme CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/theme.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Simple Icons (Optional) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body class="login-theme-body">
+
+  <!-- 
+      SECTION 1: BACKGROUND ANIMATIONS 
+    -->
+  <div class="background-layer">
+    <div class="bg-grid"></div>
+    <div id="theme-stars"></div>
+    <div id="theme-particles"></div>
+
+    <!-- Glowing Blobs -->
+    <div class="bg-blob blob-1"></div>
+    <div class="bg-blob blob-2"></div>
+    <div class="bg-blob blob-3"></div>
+
+    <!-- Dark Vignette -->
+    <div class="bg-vignette"></div>
+  </div>
+
+
+  <!-- 
+      SECTION 2: LOGIN CARD
+    -->
+  <div class="login-wrapper">
+    <div class="login-card-3d">
+      <div class="glass-panel">
+
+        <h1 class="theme-title">
+          Trade<span class="theme-highlight">Journal</span>
+        </h1>
+        <p class="theme-subtitle">Welcome back! Please log in.</p>
+
+        <!-- Flashed Messages for Errors -->
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="alert-message">
+          <i data-lucide="alert-circle" style="width: 18px; height: 18px;"></i>
+          <span>{{ messages[0] }}</span>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <!-- Login Form -->
+        <form method="POST">
+
+          <!-- Email Input -->
+          <div class="theme-input-group">
+            <i data-lucide="mail" class="input-icon-left"></i>
+            <input type="email" name="email" class="theme-input" placeholder="Email Address" required
+              autocomplete="email">
+          </div>
+
+          <!-- Password Input -->
+          <div class="theme-input-group">
+            <i data-lucide="lock" class="input-icon-left"></i>
+            <input type="password" name="password" id="password" class="theme-input" placeholder="Password" required
+              autocomplete="current-password">
+            <i data-lucide="eye" class="input-icon-right" onclick="togglePassword('password', this)"></i>
+          </div>
+
+          <!-- Sign In Button -->
+          <button type="submit" class="theme-btn">
+            Log In
+          </button>
+
+        </form>
+
+        <div style="margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: #71717a;">
+
+
+          <!-- Register Link -->
+          Don't have an account? <a href="{{ url_for('register') }}" class="theme-link">Sign Up</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 2. Include the Theme JS -->
+  <script src="{{ url_for('static', filename='assets/js/animation.js') }}"></script>
+
+  <!-- Icon Script -->
+  <script>
+    lucide.createIcons();
+  </script>
+
+</body>
+
+</html>

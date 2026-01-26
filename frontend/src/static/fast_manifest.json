@@ -1,0 +1,9 @@
+{
+    "name": "TraderPro Guide",
+    "short_name": "TraderPro",
+    "start_url": "/chart",
+    "display": "standalone",
+    "background_color": "#050505",
+    "theme_color": "#050505",
+    "icons": []
+}

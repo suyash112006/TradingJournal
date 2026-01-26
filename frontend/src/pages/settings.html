@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="animate-box">
+
+    <div class="page-header">
+        <h1 class="page-title">Settings</h1>
+    </div>
+
+    <!-- TRADING MODE -->
+    <div class="metric-card mb-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
+            <i data-lucide="switch" class="w-5 h-5 text-emerald-400"></i>
+            Trading Mode
+        </h3>
+
+        <div class="flex justify-between items-center gap-6">
+            <div>
+                <div class="font-medium text-gray-200">Select Mode</div>
+                <div class="text-sm text-gray-500 mt-1">Choose between Trading Journal or Backtesting</div>
+            </div>
+
+            <form action="{{ url_for('toggle_mode_api') }}" method="POST" class="flex gap-3">
+                <select name="mode" class="form-input w-48" onchange="updateMode(this.value)">
+                    <option value="journal" {% if current_user.account_type=='journal' %}selected{% endif %}>Trading
+                        Journal</option>
+                    <option value="backtest" {% if current_user.account_type=='backtest' %}selected{% endif %}>
+                        Backtesting</option>
+                </select>
+                <button type="button" onclick="switchMode()" class="btn btn-primary">Switch</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let selectedMode = '{{ current_user.account_type }}';
+
+        function updateMode(value) {
+            selectedMode = value;
+        }
+
+        function switchMode() {
+            const isBacktest = selectedMode === 'backtest';
+            console.log('Switching to:', selectedMode);
+
+            fetch('{{ url_for("toggle_mode_api") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isOn: isBacktest })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Mode switched:', data);
+                    setTimeout(() => {
+                        if (isBacktest) {
+                            window.location.href = '{{ url_for("chart_page") }}';
+                        } else {
+                            window.location.href = '{{ url_for("dashboard") }}';
+                        }
+                    }, 300);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
+
+    <!-- ACCOUNT SETTINGS -->
+    <div class="metric-card mb-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
+            <i data-lucide="user" class="w-5 h-5 text-blue-400"></i>
+            Account
+        </h3>
+
+        <div class="flex justify-between items-center gap-6">
+            <div>
+                <div class="font-medium text-gray-200">Starting Balance</div>
+                <div class="text-sm text-gray-500 mt-1">Update your account base capital</div>
+            </div>
+
+            <form action="{{ url_for('update_account') }}" method="POST" class="flex gap-3">
+                <input type="number" name="initial_balance" placeholder="Enter amount" required class="form-input w-48"
+                    value="{{ current_user.initial_balance }}">
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- DATA & BACKUP -->
+    <div class="metric-card mb-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
+            <i data-lucide="database" class="w-5 h-5 text-purple-400"></i>
+            Data & Backup
+        </h3>
+
+        <div class="flex justify-between items-center gap-6">
+            <div>
+                <div class="font-medium text-gray-200">Export Trade History</div>
+                <div class="text-sm text-gray-500 mt-1">Download all your trades as a CSV file</div>
+            </div>
+
+            <a href="{{ url_for('export_csv') }}" class="btn btn-secondary"
+                onclick="return confirm('Export all trades as CSV?')">
+                Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- BACKTESTING DATA MANAGEMENT -->
+    {% if current_user.account_type == 'backtest' %}
+    <div class="metric-card mb-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
+            <i data-lucide="folder-kanban" class="w-5 h-5 text-blue-400"></i>
+            Backtesting Data Management
+        </h3>
+
+        <!-- Symbol List & Individual Deletion -->
+        <div class="mb-6">
+            <h4 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Loaded Symbols</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="symbolList">
+                {% if symbols %}
+                {% for sym in symbols %}
+                <div
+                    class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:border-blue-500/30 transition-all group">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-bold text-blue-400">{{ sym }}</span>
+                        <span class="text-[10px] text-gray-500 uppercase">Processed</span>
+                    </div>
+                    <button onclick="deleteSymbol('{{ sym }}')"
+                        class="p-1.5 text-gray-500 hover:text-red-400 transition-colors" title="Delete Symbol Data">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="col-span-2 text-sm text-gray-500 italic py-2">No symbols uploaded yet. Upload a CSV to get
+                    started.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Multi-Action Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-white/10">
+            <div class="flex items-center gap-4">
+                <form action="{{ url_for('upload_mt5_csv') }}" method="POST" enctype="multipart/form-data">
+                    <input type="file" name="file" id="settingsCsvInput" accept=".csv" class="hidden"
+                        onchange="this.form.submit()">
+                    <label for="settingsCsvInput" class="btn btn-primary flex items-center gap-2 cursor-pointer">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        Upload New MT5 CSV
+                    </label>
+                </form>
+            </div>
+
+            <button onclick="clearAllBacktestData()"
+                class="btn border border-red-500/30 text-red-400 hover:bg-red-500/10 flex items-center gap-2">
+                <i data-lucide="eraser" class="w-4 h-4"></i>
+                Wipe All Data
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function deleteSymbol(symbol) {
+            if (!confirm(`Are you sure you want to delete all processed data for ${symbol}?`)) return;
+
+            fetch('/api/backtest/delete-symbol', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: symbol })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') location.reload();
+                    else alert(data.message);
+                })
+                .catch(err => console.error('Delete error:', err));
+        }
+
+        function clearAllBacktestData() {
+            if (!confirm('This will DELETE ALL uploaded symbols and processed data. This cannot be undone. Proceed?')) return;
+
+            fetch('/api/backtest/clear-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        localStorage.removeItem('chart_uploaded_data');
+                        localStorage.removeItem('chart_active_timeframe');
+                        location.reload();
+                    } else alert(data.message);
+                })
+                .catch(err => console.error('Clear error:', err));
+        }
+    </script>
+    {% endif %}
+
+</div>
+
+{% endblock %}
