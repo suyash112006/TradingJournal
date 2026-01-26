@@ -1850,7 +1850,7 @@ def run_migrations():
                     ("rr", "FLOAT") # Ensure RR is here too
                 ]
                 for col, dtype in columns:
-                    add_column("trade", f"{col} {dtype}")
+                    add_column("trades", f"{col} {dtype}")
 
                 # User columns
                 user_cols = [
@@ -1862,7 +1862,7 @@ def run_migrations():
                     ("account_type", "VARCHAR(20) DEFAULT 'journal'")
                 ]
                 for col, dtype in user_cols:
-                    add_column("user", f"{col} {dtype}")
+                    add_column("users", f"{col} {dtype}")
 
                 # Risk Settings Table
                 conn.execute(text('''
