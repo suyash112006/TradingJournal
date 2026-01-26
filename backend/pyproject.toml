@@ -1,14 +1,15 @@
-[project]
+[tool.poetry]
 name = "backend"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "suyash112006",email = "suyashzope789@gmail.com"}
-]
-requires-python = ">=3.13"
-dependencies = [
-]
+description = "Trading Journal Backend"
+authors = ["suyash112006 <suyashzope789@gmail.com>"]
 
+[tool.poetry.dependencies]
+python = ">=3.13,<3.14"
+flask = "^3.0.0"
+flask-cors = "^4.0.0"
+python-dotenv = "^1.0.1"
+gunicorn = "^22.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
