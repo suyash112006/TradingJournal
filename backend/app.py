@@ -69,7 +69,13 @@ with app.app_context():
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
 
-mail = Mail(app)
+# Mail Config Safety
+if app.config.get("MAIL_USERNAME"):
+    mail = Mail(app)
+else:
+    # Dummy mail object or handle gracefully if mail not configured
+    print("⚠️ Mail not configured. Emails will not send.")
+    mail = Mail(app) # Initialize anyway to avoid import errors later, but send() might fail if not caught
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
 # Session & Security Config
@@ -484,6 +490,10 @@ def format_currency_filter(amount):
 # Simple rate limiting for login
 login_attempts = {}
 
+@app.route("/ping")
+def ping():
+    return "pong", 200
+
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def index():
@@ -501,13 +511,29 @@ def index():
         email = request.form.get('email').strip().lower()
         password = request.form.get('password')
 
-        user = User.query.filter_by(email=email).first()
+        if not email or not password:
+             flash('Please enter both email and password.')
+             return redirect(url_for('index'))
+
+        try:
+             user = User.query.filter_by(email=email).first()
+        except Exception as e:
+             # Safety for DB crashes (like "no such table" if create_all failed)
+             print(f"❌ DB ERROR IN LOGIN: {e}")
+             flash("Database error. Please check logs.")
+             return redirect(url_for('index'))
+
         print(f"DEBUG LOGIN: Email={email}, Found={bool(user)}")
+        
+        if not user:
+            flash("User not found")
+            return redirect(url_for("index"))
+
         if user:
-            print(f"DEBUG HASH: {user.password_hash}")
-            print(f"DEBUG CHECK: {user.check_password(password)}")
-            
-        if user and user.check_password(password):
+             print(f"DEBUG HASH: {user.password_hash}")
+             print(f"DEBUG CHECK: {user.check_password(password)}")
+             
+        if user.check_password(password):
             login_attempts[ip] = 0  # Reset on success
             login_user(user)
             
@@ -1798,61 +1824,70 @@ def analytics():
 
 
 def run_migrations():
+    """Run partial schema migrations (add missing columns)"""
     with app.app_context():
-        with db.engine.begin() as conn:  # engine.begin() auto-commits
-            # Helper to add column if not exists
-            def add_column(table, column_def):
-                name = column_def.split()[0]
+        try:
+            with db.engine.begin() as conn:  # engine.begin() auto-commits
+                # Helper to add column if not exists
+                def add_column(table, column_def):
+                    name = column_def.split()[0]
+                    try:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_def}"))
+                        print(f"Migration: Added {table}.{name}")
+                    except Exception as e:
+                        # SQLite raises error if column exists
+                        if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
+                            pass 
+                        else:
+                            print(f"Migration: {table}.{name} already exists or error: {e}")
+                
+                # Trade columns
+                columns = [
+                    ("stop_loss", "FLOAT"), ("take_profit", "FLOAT"), ("screenshot", "VARCHAR(255)"),
+                    ("strategy", "VARCHAR(50)"), ("session", "VARCHAR(20)"), ("emotion", "VARCHAR(50)"),
+                    ("is_deleted", "BOOLEAN DEFAULT 0"), ("tags", "TEXT"), ("discipline", "INTEGER"),
+                    ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME"),
+                    ("rr", "FLOAT") # Ensure RR is here too
+                ]
+                for col, dtype in columns:
+                    add_column("trade", f"{col} {dtype}")
+
+                # User columns
+                user_cols = [
+                    ("account_name", "VARCHAR(100) DEFAULT 'My Trading Account'"),
+                    ("initial_balance", "FLOAT DEFAULT 0.0"),
+                    ("name", "VARCHAR(100)"),
+                    ("email", "VARCHAR(120)"),
+                    ("role", "VARCHAR(20) DEFAULT 'user'"),
+                    ("account_type", "VARCHAR(20) DEFAULT 'journal'")
+                ]
+                for col, dtype in user_cols:
+                    add_column("user", f"{col} {dtype}")
+
+                # Risk Settings Table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS risk_settings (
+                        id INTEGER PRIMARY KEY,
+                        profit_target REAL DEFAULT 800.0,
+                        max_daily_loss REAL DEFAULT 500.0
+                    )
+                '''))
+                
+                # Seed default if empty
+                # Use scalar logic safe for Postgres/SQLite
                 try:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_def}"))
-                    print(f"Migration: Added {table}.{name}")
+                    count = conn.execute(text("SELECT count(*) FROM risk_settings")).scalar()
+                    if count == 0:
+                        conn.execute(text("INSERT INTO risk_settings (profit_target, max_daily_loss) VALUES (800.0, 500.0)"))
+                        print("Migration: Seeded default risk settings")
                 except Exception as e:
-                    # SQLite raises error if column exists
-                    if "duplicate column name" in str(e).lower():
-                        pass 
-                    else:
-                        print(f"Migration: {table}.{name} already exists or error: {e}")
-            
-            # Trade columns
-            columns = [
-                ("stop_loss", "FLOAT"), ("take_profit", "FLOAT"), ("screenshot", "VARCHAR(255)"),
-                ("strategy", "VARCHAR(50)"), ("session", "VARCHAR(20)"), ("emotion", "VARCHAR(50)"),
-                ("is_deleted", "BOOLEAN DEFAULT 0"), ("tags", "TEXT"), ("discipline", "INTEGER"),
-                ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME")
-            ]
-            for col, dtype in columns:
-                add_column("trade", f"{col} {dtype}")
+                    print(f"Risk Settings Init Error: {e}")
 
-            # User columns
-            user_cols = [
-                ("account_name", "VARCHAR(100) DEFAULT 'My Trading Account'"),
-                ("initial_balance", "FLOAT DEFAULT 0.0"),
-                ("name", "VARCHAR(100)"),
-                ("email", "VARCHAR(120)"),
-                ("role", "VARCHAR(20) DEFAULT 'user'"),
-                ("account_type", "VARCHAR(20) DEFAULT 'journal'")
-            ]
-            for col, dtype in user_cols:
-                add_column("user", f"{col} {dtype}")
-
-            # Risk Settings Table
-            conn.execute(text('''
-                CREATE TABLE IF NOT EXISTS risk_settings (
-                    id INTEGER PRIMARY KEY,
-                    profit_target REAL DEFAULT 800.0,
-                    max_daily_loss REAL DEFAULT 500.0
-                )
-            '''))
-            
-            # Seed default if empty
-            count = conn.execute(text("SELECT count(*) FROM risk_settings")).scalar()
-            if count == 0:
-                conn.execute(text("INSERT INTO risk_settings (profit_target, max_daily_loss) VALUES (800.0, 500.0)"))
-                print("Migration: Seeded default risk settings")
+        except Exception as e:
+            print(f"Migration failed (non-critical if DB is new): {e}")
 
 def create_admin():
     with app.app_context():
-        db.create_all() # Ensures tables exist
         # Check for admin user
         # Note: run_migrations() must run BEFORE this if the table exists but is missing columns
         if not User.query.filter_by(username='admin').first():
@@ -1862,7 +1897,18 @@ def create_admin():
             db.session.commit()
             print("Created default admin user (admin/password)")
 
+# ---------------------------------------------------------
+# 🔥 CRITICAL: Run DB Init ON STARTUP (For Render)
+# ---------------------------------------------------------
+with app.app_context():
+    try:
+        db.create_all()  # Ensure tables exist (Render Postgres needs this!)
+        run_migrations() # Add any columns if updating existing DB
+        create_admin()   # Ensure admin user
+        print("✅ Database initialized successfully.")
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
+# ---------------------------------------------------------
+
 if __name__ == '__main__':
-    run_migrations() # 1. Migrate Schema (add missing columns)
-    create_admin()   # 2. Ensure data (admin user)
     app.run(debug=True)

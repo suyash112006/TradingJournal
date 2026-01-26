@@ -1,8 +1,14 @@
 import os
 
 class Config:
-    SECRET_KEY = "super-secret-key"
-    SQLALCHEMY_DATABASE_URI = "sqlite:///journal.db"
+    SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key")
+    
+    # Render provides 'postgres://' which SQLAlchemy 1.4+ deprecated. We must fix it to 'postgresql://'
+    uri = os.environ.get("DATABASE_URL", "postgresql://postgresql_tpve_user:NHdE6FK5hGwg5bDR8PDOhqfH9RgkKo2r@dpg-d5rqbc8gjchc739aln70-a/postgresql_tpvez")
+    if uri and uri.startswith("postgres://"):
+        uri = uri.replace("postgres://", "postgresql://", 1)
+        
+    SQLALCHEMY_DATABASE_URI = uri
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes in seconds
 
