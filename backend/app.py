@@ -1034,15 +1034,16 @@ def dashboard():
     month_str = f"{curr_year}-{curr_month:02d}"
     
     calendar_data_rows = db.session.execute(text("""
-        SELECT 
-            date(date, '+2 hours') as broker_day,
-            SUM(pnl) as pnl,
-            COUNT(*) as trade_count
+        SELECT
+            (date + INTERVAL '2 hours')::date AS broker_day,
+            SUM(pnl) AS pnl,
+            COUNT(*) AS trade_count
         FROM trades
-        WHERE user_id = :uid 
+        WHERE user_id = :uid
           AND (is_deleted = FALSE OR is_deleted IS NULL)
-          AND strftime('%Y-%m', date, '+2 hours') = :month
+          AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month
         GROUP BY broker_day
+        ORDER BY broker_day
     """), {"uid": current_user.id, "month": month_str}).fetchall()
     
     calendar_map = {row.broker_day: {"pnl": row.pnl, "count": row.trade_count, "breached": (row.pnl < 0 and abs(row.pnl) >= max_daily_loss)} 
@@ -1096,15 +1097,16 @@ def calendar_api():
     month_str = f"{year}-{month:02d}"
     
     calendar_data_rows = db.session.execute(text("""
-        SELECT 
-            date(date, '+2 hours') as broker_day,
-            SUM(pnl) as pnl,
-            COUNT(*) as trade_count
+        SELECT
+            (date + INTERVAL '2 hours')::date AS broker_day,
+            SUM(pnl) AS pnl,
+            COUNT(*) AS trade_count
         FROM trades
-        WHERE user_id = :uid 
+        WHERE user_id = :uid
           AND (is_deleted = FALSE OR is_deleted IS NULL)
-          AND strftime('%Y-%m', date, '+2 hours') = :month
+          AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month
         GROUP BY broker_day
+        ORDER BY broker_day
     """), {"uid": current_user.id, "month": month_str}).fetchall()
     
     calendar_map = {row.broker_day: {
@@ -1328,8 +1330,8 @@ def journal():
         query = query.filter(Trade.tags.like(search))
     
     if date_filter:
-        # Broker day filter: trades where date(date, '+2 hours') == date_filter
-        query = query.filter(text("date(date, '+2 hours') = :d")).params(d=date_filter)
+        # Broker day filter: trades where (date + INTERVAL '2 hours')::date == date_filter
+        query = query.filter(text("(date + INTERVAL '2 hours')::date = :d")).params(d=date_filter)
     
     if emotion_filter:
         query = query.filter(Trade.emotion == emotion_filter)
@@ -1731,7 +1733,7 @@ def analytics():
 
     # 2. Weekly Breakdown (Table)
     weekly = db.session.execute(text("""
-        SELECT strftime('%Y-W%W', date) AS week,
+        SELECT TO_CHAR(date, 'IYYY-IW') AS week,
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
         FROM trades
@@ -1742,7 +1744,7 @@ def analytics():
 
     # 3. Monthly Breakdown (Table)
     monthly = db.session.execute(text("""
-        SELECT strftime('%Y-%m', date) AS month,
+        SELECT TO_CHAR(date, 'YYYY-MM') AS month,
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
         FROM trades
@@ -1762,9 +1764,8 @@ def analytics():
     for t in all_trades:
         if not t.date: continue
         # ISO Week format: YYYY-Www, but we need date string for chart?
-        # User requested: strftime('%Y-W%W', date) as time
-        # But charts need YYYY-MM-DD. Let's use Monday of the week for chart key.
-        week_key = t.date.strftime('%Y-W%W')
+        # User requested: TO_CHAR(date, 'IYYY-IW') as time (ISO week format)
+        week_key = t.date.strftime('%G-W%V')  # ISO week format in Python
         
         cumulative_pnl += t.pnl
         weekly_equity_map[week_key] = cumulative_pnl
@@ -1773,12 +1774,12 @@ def analytics():
     
     weekly_equity_rows = db.session.execute(text("""
         SELECT 
-            DATE(date, 'weekday 0', '-6 days') as week_start,
-            strftime('%Y-W%W', date) as week_label,
+            DATE_TRUNC('week', date)::date as week_start,
+            TO_CHAR(date, 'IYYY-IW') as week_label,
             SUM(pnl) as pnl
         FROM trades
         WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
-        GROUP BY week_label
+        GROUP BY week_start, week_label
         ORDER BY week_start ASC
     """), {"uid": current_user.id}).fetchall()
     
