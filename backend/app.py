@@ -942,7 +942,7 @@ def dashboard():
     today_pnl_row = db.session.execute(text("""
         SELECT COALESCE(SUM(pnl), 0)
         FROM trades
-        WHERE date >= :start AND date < :end AND (is_deleted = 0 OR is_deleted IS NULL)
+        WHERE date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)
     """), {"start": start_utc, "end": end_utc}).fetchone()
     
     todays_trades = [t for t in trades if t.date and t.date.date() == date.today()] # Simple day check if utc/ist not critical here, but ideally uses window
@@ -1040,7 +1040,7 @@ def dashboard():
             COUNT(*) as trade_count
         FROM trades
         WHERE user_id = :uid 
-          AND (is_deleted = 0 OR is_deleted IS NULL)
+          AND (is_deleted = FALSE OR is_deleted IS NULL)
           AND strftime('%Y-%m', date, '+2 hours') = :month
         GROUP BY broker_day
     """), {"uid": current_user.id, "month": month_str}).fetchall()
@@ -1102,7 +1102,7 @@ def calendar_api():
             COUNT(*) as trade_count
         FROM trades
         WHERE user_id = :uid 
-          AND (is_deleted = 0 OR is_deleted IS NULL)
+          AND (is_deleted = FALSE OR is_deleted IS NULL)
           AND strftime('%Y-%m', date, '+2 hours') = :month
         GROUP BY broker_day
     """), {"uid": current_user.id, "month": month_str}).fetchall()
@@ -1724,7 +1724,7 @@ def analytics():
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
         FROM trades
-        WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
+        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
         GROUP BY DATE(date)
         ORDER BY day DESC
     """), {"uid": current_user.id}).fetchall()
@@ -1735,7 +1735,7 @@ def analytics():
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
         FROM trades
-        WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
+        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
         GROUP BY week
         ORDER BY week DESC
     """), {"uid": current_user.id}).fetchall()
@@ -1746,7 +1746,7 @@ def analytics():
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
         FROM trades
-        WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
+        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
         GROUP BY month
         ORDER BY month DESC
     """), {"uid": current_user.id}).fetchall()
@@ -1777,7 +1777,7 @@ def analytics():
             strftime('%Y-W%W', date) as week_label,
             SUM(pnl) as pnl
         FROM trades
-        WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
+        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
         GROUP BY week_label
         ORDER BY week_start ASC
     """), {"uid": current_user.id}).fetchall()
