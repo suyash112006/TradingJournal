@@ -1,12 +1,13 @@
-# Ignore ALL uploads & generated data
-uploads/
-instance/
-
-# Secrets
-.env
-
-# Node
-node_modules/
-
 # Python
 __pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Database
+*.db
+
+# Conda / venv
+.env/
+venv/

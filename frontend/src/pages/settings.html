@@ -10,7 +10,7 @@
     <!-- TRADING MODE -->
     <div class="metric-card mb-6">
         <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
-            <i data-lucide="switch" class="w-5 h-5 text-emerald-400"></i>
+            <i data-lucide="shuffle" class="w-5 h-5 text-emerald-400"></i>
             Trading Mode
         </h3>
 
@@ -27,7 +27,10 @@
                     <option value="backtest" {% if current_user.account_type=='backtest' %}selected{% endif %}>
                         Backtesting</option>
                 </select>
-                <button type="button" onclick="switchMode()" class="btn btn-primary">Switch</button>
+                <button type="button" onclick="switchMode()" class="btn btn-primary flex items-center gap-2">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    Switch
+                </button>
             </form>
         </div>
     </div>
