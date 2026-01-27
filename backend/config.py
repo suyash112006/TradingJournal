@@ -4,9 +4,12 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key")
     
     # Render provides 'postgres://' which SQLAlchemy 1.4+ deprecated. We must fix it to 'postgresql://'
-    uri = os.environ.get("DATABASE_URL", "postgresql://postgresql_tpve_user:NHdE6FK5hGwg5bDR8PDOhqfH9RgkKo2r@dpg-d5rqbc8gjchc739aln70-a/postgresql_tpvez")
+    uri = os.environ.get("DATABASE_URL", "sqlite:///trading_journal.db")
     if uri and uri.startswith("postgres://"):
         uri = uri.replace("postgres://", "postgresql://", 1)
+    
+    # Updated PostgreSQL URL for production fallback if needed
+    POSTGRES_FALLBACK = "postgresql://postgresql_tpve_user:NHdE6FK5hGwg5bDR8PDOhqfH9RgkKo2r@dpg-d5rqbc8gjchc739aln70-a.oregon-postgres.render.com/postgresql_tpve"
         
     SQLALCHEMY_DATABASE_URI = uri
     SQLALCHEMY_TRACK_MODIFICATIONS = False

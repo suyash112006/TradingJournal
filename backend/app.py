@@ -1723,7 +1723,7 @@ def analytics():
         SELECT DATE(date) AS day,
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
-        FROM trade
+        FROM trades
         WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
         GROUP BY DATE(date)
         ORDER BY day DESC
@@ -1734,7 +1734,7 @@ def analytics():
         SELECT strftime('%Y-W%W', date) AS week,
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
-        FROM trade
+        FROM trades
         WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
         GROUP BY week
         ORDER BY week DESC
@@ -1745,7 +1745,7 @@ def analytics():
         SELECT strftime('%Y-%m', date) AS month,
                COUNT(*) AS trades,
                SUM(pnl) AS pnl
-        FROM trade
+        FROM trades
         WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
         GROUP BY month
         ORDER BY month DESC
@@ -1776,7 +1776,7 @@ def analytics():
             DATE(date, 'weekday 0', '-6 days') as week_start,
             strftime('%Y-W%W', date) as week_label,
             SUM(pnl) as pnl
-        FROM trade
+        FROM trades
         WHERE user_id = :uid AND (is_deleted = 0 OR is_deleted IS NULL)
         GROUP BY week_label
         ORDER BY week_start ASC
