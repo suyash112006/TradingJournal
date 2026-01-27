@@ -205,7 +205,8 @@ def get_avg_rr(user_id):
     
     if not trades:
         return 0.0
-        
+    
+    total_rr = sum(t.rr or 0 for t in trades)
     return round(total_rr / len(trades), 2)
 
 def hash_file(file_path):
@@ -1109,7 +1110,7 @@ def calendar_api():
         ORDER BY broker_day
     """), {"uid": current_user.id, "month": month_str}).fetchall()
     
-    calendar_map = {row.broker_day: {
+    calendar_map = {row.broker_day.isoformat(): {
         "pnl": float(row.pnl), 
         "count": int(row.trade_count), 
         "breached": (row.pnl < 0 and abs(row.pnl) >= max_daily_loss)
