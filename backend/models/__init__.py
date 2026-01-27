@@ -69,3 +69,9 @@ class Trade(db.Model):
     # New SaaS Fields
     emotion = db.Column(db.String(50))
     timeframe = db.Column(db.String(20))
+
+class RiskSettings(db.Model):
+    __tablename__ = "risk_settings"
+    id = db.Column(db.Integer, primary_key=True)
+    profit_target = db.Column(db.Float, default=800.0)
+    max_daily_loss = db.Column(db.Float, default=500.0)

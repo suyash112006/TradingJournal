@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
 
-from models import db, bcrypt, User, Task, Trade
+from models import db, bcrypt, User, Task, Trade, RiskSettings
 from config import Config
 import hashlib
 import threading
@@ -51,20 +51,21 @@ ALLOWED_TIMEFRAMES = ["M1", "M3", "M5", "M15", "M30", "H1", "H2", "H4", "D1", "W
 db.init_app(app)
 bcrypt.init_app(app)
 
-# --- Auto-Migration for R:R column ---
+# --- Database Initialization ---
 with app.app_context():
     try:
-        inspector = inspect(db.engine)
-        if inspector.has_table("trade"):
-            columns = [c['name'] for c in inspector.get_columns('trade')]
-            if 'rr' not in columns:
-                print("🛠️ Auto-Migrating: Adding 'rr' column to trade table...")
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE trade ADD COLUMN rr FLOAT"))
-                    conn.commit()
-                print("✅ Migration successful: 'rr' column added.")
+        db.create_all()
+        
+        # Seed RiskSettings if empty
+        if not RiskSettings.query.first():
+            print("🛠️ Seeding default Risk Settings...")
+            default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
+            db.session.add(default_settings)
+            db.session.commit()
+            print("✅ Risk Settings seeded.")
+            
     except Exception as e:
-        print(f"⚠️ Migration check failed: {e}")
+        print(f"⚠️ DB Init failed: {e}")
 
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
@@ -940,7 +941,7 @@ def dashboard():
     
     today_pnl_row = db.session.execute(text("""
         SELECT COALESCE(SUM(pnl), 0)
-        FROM trade
+        FROM trades
         WHERE date >= :start AND date < :end AND (is_deleted = 0 OR is_deleted IS NULL)
     """), {"start": start_utc, "end": end_utc}).fetchone()
     
@@ -1037,7 +1038,7 @@ def dashboard():
             date(date, '+2 hours') as broker_day,
             SUM(pnl) as pnl,
             COUNT(*) as trade_count
-        FROM trade
+        FROM trades
         WHERE user_id = :uid 
           AND (is_deleted = 0 OR is_deleted IS NULL)
           AND strftime('%Y-%m', date, '+2 hours') = :month
@@ -1099,7 +1100,7 @@ def calendar_api():
             date(date, '+2 hours') as broker_day,
             SUM(pnl) as pnl,
             COUNT(*) as trade_count
-        FROM trade
+        FROM trades
         WHERE user_id = :uid 
           AND (is_deleted = 0 OR is_deleted IS NULL)
           AND strftime('%Y-%m', date, '+2 hours') = :month
