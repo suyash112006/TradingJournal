@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .analytics-card {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-default);
+        border-radius: 16px;
+        padding: 24px;
+        animation: fadeInUp 0.6s var(--ease-premium) backwards;
+    }
+
+    .analytics-card:hover {
+        border-color: var(--border-glow);
+    }
+
+    .input-group-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    /* Consistent Focus Highlight for Analysis Page */
+    .theme-input,
+    .theme-select,
+    textarea {
+        background-color: #0b0b0f;
+        border-color: #1f2937;
+    }
+
+    .theme-input:focus,
+    .theme-select:focus,
+    textarea:focus {
+        border-color: var(--theme-primary) !important;
+        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+    }
+
+    /* Green Highlight for Buttons on Click and Hover */
+    .btn-secondary:hover,
+    .btn-secondary:active,
+    .btn-secondary:focus {
+        border-color: var(--theme-primary) !important;
+        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+        color: white !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Edit Analysis</h1>
+        </div>
+        <a href="{{ url_for('analysis_history') }}" class="btn btn-secondary gap-2">
+            <i data-lucide="x" class="w-4 h-4"></i>
+            Cancel
+        </a>
+    </div>
+
+    <div class="analytics-card relative overflow-hidden">
+        <!-- Background Glow -->
+        <div
+            class="absolute top-0 right-0 w-64 h-64 bg-[var(--profit)] rounded-full blur-[128px] opacity-5 -translate-y-1/2 translate-x-1/2 pointer-events-none">
+        </div>
+
+        <form method="POST" enctype="multipart/form-data" class="space-y-6 relative z-10">
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Date -->
+                <div>
+                    <label class="input-group-label">Date</label>
+                    <div class="relative">
+                        <i data-lucide="calendar" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <input type="date" name="trade_date" required class="theme-input text-white"
+                            value="{{ analysis.trade_date }}">
+                    </div>
+                </div>
+
+                <!-- Symbol -->
+                <div>
+                    <label class="input-group-label">Symbol</label>
+                    <div class="relative">
+                        <i data-lucide="bar-chart-2" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <input type="text" name="symbol" required placeholder="e.g. XAUUSD"
+                            style="text-transform: uppercase;" class="theme-input uppercase"
+                            value="{{ analysis.symbol }}">
+                    </div>
+                </div>
+
+                <!-- Timeframe -->
+                <div>
+                    <label class="input-group-label">Timeframe</label>
+                    <div class="relative">
+                        <i data-lucide="clock" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <select name="timeframe" class="theme-select" required>
+                            <option value="" disabled>Select TF</option>
+                            <option value="M1" {% if analysis.timeframe=='M1' %}selected{% endif %}>M1</option>
+                            <option value="M3" {% if analysis.timeframe=='M3' %}selected{% endif %}>M3</option>
+                            <option value="M5" {% if analysis.timeframe=='M5' %}selected{% endif %}>M5</option>
+                            <option value="M15" {% if analysis.timeframe=='M15' %}selected{% endif %}>M15</option>
+                            <option value="M30" {% if analysis.timeframe=='M30' %}selected{% endif %}>M30</option>
+                            <option value="H1" {% if analysis.timeframe=='H1' %}selected{% endif %}>H1</option>
+                            <option value="H2" {% if analysis.timeframe=='H2' %}selected{% endif %}>H2</option>
+                            <option value="H4" {% if analysis.timeframe=='H4' %}selected{% endif %}>H4</option>
+                            <option value="D1" {% if analysis.timeframe=='D1' %}selected{% endif %}>D1</option>
+                            <option value="W1" {% if analysis.timeframe=='W1' %}selected{% endif %}>W1</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Bias -->
+                <div class="space-y-2 md:col-span-3">
+                    <label class="input-group-label">Bias</label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Long" class="peer hidden" required {% if
+                                analysis.bias=='Long' %}checked{% endif %}>
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(0,255,153,0.1)] peer-checked:text-[var(--profit)] peer-checked:border-[var(--profit)] transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Bullish
+                            </div>
+                        </label>
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Short" class="peer hidden" {% if
+                                analysis.bias=='Short' %}checked{% endif %}>
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(239,68,68,0.1)] peer-checked:text-[var(--loss)] peer-checked:border-[var(--loss)] transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Bearish
+                            </div>
+                        </label>
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Range" class="peer hidden" {% if
+                                analysis.bias=='Range' %}checked{% endif %}>
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(234,179,8,0.1)] peer-checked:text-yellow-400 peer-checked:border-yellow-500 transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Range
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Before Image -->
+                <div class="space-y-2">
+                    <label class="input-group-label">Before Chart</label>
+                    {% if analysis.before_image %}
+                    <div
+                        class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden relative group transition-all duration-300">
+                        <img src="{{ url_for('static', filename=analysis.before_image) }}"
+                            class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
+
+                        <!-- Overlay Actions -->
+                        <div
+                            class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <!-- View Fullscreen -->
+                            <button type="button"
+                                onclick="openFullscreen('{{ url_for('static', filename=analysis.before_image) }}', {{ analysis.id }}, 'before')"
+                                class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white transition-all transform hover:scale-110 shadow-lg"
+                                title="View Fullscreen">
+                                <i data-lucide="maximize-2" class="w-5 h-5"></i>
+                            </button>
+
+                            <!-- Change Image -->
+                            <label
+                                class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white cursor-pointer transition-all transform hover:scale-110 shadow-lg"
+                                title="Change Image">
+                                <i data-lucide="upload" class="w-5 h-5"></i>
+                                <input type="file" name="before_image" accept="image/*" class="hidden"
+                                    onchange="previewFile(this, 'before-preview-img', 'before-overlay')">
+                            </label>
+                        </div>
+
+                        <!-- Delete Button (Top Right) -->
+                        <button type="button"
+                            onclick="event.stopPropagation(); deleteImage({{ analysis.id }}, 'before')"
+                            class="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-500/90 text-white/80 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-sm transform translate-y-[-10px] group-hover:translate-y-0"
+                            title="Delete Image">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+
+                        <div id="before-filename"
+                            class="absolute bottom-0 left-0 right-0 p-2 bg-black/80 text-xs text-center text-[var(--theme-primary)] truncate hidden">
+                        </div>
+                    </div>
+                    {% else %}
+                    <label
+                        class="aspect-video bg-black/20 rounded-lg border border-white/10 border-dashed hover:border-[var(--theme-primary)]/50 hover:bg-[var(--theme-primary)]/5 cursor-pointer flex flex-col items-center justify-center gap-3 text-gray-500 hover:text-[var(--theme-primary)] transition-all group relative overflow-hidden">
+                        <div
+                            class="p-4 rounded-full bg-white/5 group-hover:bg-[var(--theme-primary)]/10 transition-colors">
+                            <i data-lucide="upload" class="w-8 h-8 group-hover:scale-110 transition-transform"></i>
+                        </div>
+                        <span class="text-sm font-medium">Upload Screenshot</span>
+                        <input type="file" name="before_image" accept="image/*" class="hidden"
+                            onchange="previewFileBox(this, 'before-box-label')">
+                        <div id="before-box-label"
+                            class="absolute bottom-4 left-0 right-0 text-center text-xs px-4 truncate text-[var(--theme-primary)]">
+                        </div>
+                    </label>
+                    {% endif %}
+                </div>
+
+                <!-- After Image -->
+                <div class="space-y-2">
+                    <label class="input-group-label">After Chart (Result)</label>
+                    {% if analysis.after_image %}
+                    <div
+                        class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden relative group transition-all duration-300">
+                        <img src="{{ url_for('static', filename=analysis.after_image) }}"
+                            class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
+
+                        <!-- Overlay Actions -->
+                        <div
+                            class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <!-- View Fullscreen -->
+                            <button type="button"
+                                onclick="openFullscreen('{{ url_for('static', filename=analysis.after_image) }}', {{ analysis.id }}, 'after')"
+                                class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white transition-all transform hover:scale-110 shadow-lg"
+                                title="View Fullscreen">
+                                <i data-lucide="maximize-2" class="w-5 h-5"></i>
+                            </button>
+
+                            <!-- Change Image -->
+                            <label
+                                class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white cursor-pointer transition-all transform hover:scale-110 shadow-lg"
+                                title="Change Image">
+                                <i data-lucide="upload" class="w-5 h-5"></i>
+                                <input type="file" name="after_image" accept="image/*" class="hidden"
+                                    onchange="previewFile(this, 'after-preview-img', 'after-overlay')">
+                            </label>
+                        </div>
+
+                        <!-- Delete Button - Top Right -->
+                        <button type="button" onclick="event.stopPropagation(); deleteImage({{ analysis.id }}, 'after')"
+                            class="absolute top-3 right-3 p-2.5 bg-red-500/90 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg"
+                            title="Delete Image">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+
+                        <div id="after-filename"
+                            class="absolute bottom-0 left-0 right-0 p-2 bg-black/80 text-xs text-center text-[var(--theme-primary)] truncate hidden">
+                        </div>
+                    </div>
+                    {% else %}
+                    <label
+                        class="aspect-video bg-black/20 rounded-lg border border-white/10 border-dashed hover:border-[var(--theme-primary)]/50 hover:bg-[var(--theme-primary)]/5 cursor-pointer flex flex-col items-center justify-center gap-3 text-gray-500 hover:text-[var(--theme-primary)] transition-all group relative overflow-hidden">
+                        <div
+                            class="p-4 rounded-full bg-white/5 group-hover:bg-[var(--theme-primary)]/10 transition-colors">
+                            <i data-lucide="upload" class="w-8 h-8 group-hover:scale-110 transition-transform"></i>
+                        </div>
+                        <span class="text-sm font-medium">Add Result</span>
+                        <input type="file" name="after_image" accept="image/*" class="hidden"
+                            onchange="previewFileBox(this, 'after-box-label')">
+                        <div id="after-box-label"
+                            class="absolute bottom-4 left-0 right-0 text-center text-xs px-4 truncate text-[var(--theme-primary)]">
+                        </div>
+                    </label>
+                    {% endif %}
+                </div>
+            </div>
+
+            <script>
+                function previewFileBox(input, labelId) {
+                    if (input.files && input.files[0]) {
+                        document.getElementById(labelId).textContent = "Selected: " + input.files[0].name;
+                    }
+                }
+
+                // For updating existing images - simpler just to show name for now as we didn't add ID to img tag
+                function previewFile(input, imgId, overlayId) {
+                    // Basic feedback
+                    if (input.files && input.files[0]) {
+                        alert("Selected: " + input.files[0].name + "\nClick 'Update Analysis' to save.");
+                    }
+                }
+            </script>
+
+            <!-- Notes -->
+            <div>
+                <label class="input-group-label">Pre-Analysis Notes</label>
+                <textarea name="analysis_notes" rows="4" class="theme-input resize-y min-h-[100px]"
+                    style="padding-left: 1rem;">{{ analysis.analysis_notes }}</textarea>
+            </div>
+
+            <!-- Action -->
+            <div class="pt-4 flex justify-end gap-3">
+                <a href="{{ url_for('analysis_history') }}"
+                    class="btn btn-secondary !w-auto min-w-[120px] flex items-center justify-center">
+                    Cancel
+                </a>
+                <button type="submit" class="theme-btn flex items-center justify-center gap-2 !w-auto min-w-[160px]">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Update Analysis
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Fullscreen Image Modal -->
+<div id="imageModal"
+    class="fixed inset-0 z-50 hidden bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 outline-none"
+    tabindex="-1" onclick="closeFullscreen()">
+    <button onclick="closeFullscreen()" class="absolute top-4 right-4 text-white/50 hover:text-white transition-colors">
+        <i data-lucide="x" class="w-8 h-8"></i>
+    </button>
+    <img id="modalImage" src=""
+        class="max-w-full max-h-full object-contain rounded-lg shadow-2xl shadow-[var(--theme-primary)]/20"
+        onclick="event.stopPropagation()">
+</div>
+
+<script>
+    let currentImageId = null;
+    let currentImageType = null;
+
+    function openFullscreen(src, id, type) {
+        currentImageId = id;
+        currentImageType = type;
+        const modal = document.getElementById('imageModal');
+        const img = document.getElementById('modalImage');
+        img.src = src;
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => modal.focus(), 10);
+    }
+
+    function closeFullscreen() {
+        const modal = document.getElementById('imageModal');
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+        currentImageId = null;
+        currentImageType = null;
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            closeFullscreen();
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && currentImageId && currentImageType) {
+            deleteImage(currentImageId, currentImageType);
+        }
+    });
+
+    async function deleteImage(id, type) {
+        if (!confirm('Are you sure you want to delete this image?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/analysis/image/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ analysisId: id, type: type })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error deleting image: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An unexpected error occurred.');
+        }
+    }
+</script>
+{% endblock %}

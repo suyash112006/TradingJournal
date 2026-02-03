@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .analytics-card {
+        background: rgba(11, 15, 20, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-default);
+        border-radius: 16px;
+        padding: 24px;
+        animation: fadeInUp 0.6s var(--ease-premium) backwards;
+    }
+
+    .analytics-card:hover {
+        border-color: var(--border-glow);
+    }
+
+    .input-group-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    /* Consistent Focus Highlight for Analysis Page */
+    .theme-input,
+    .theme-select,
+    textarea {
+        background-color: #0b0b0f;
+        border-color: #1f2937;
+    }
+
+    .theme-input:focus,
+    .theme-select:focus,
+    textarea:focus {
+        border-color: var(--theme-primary) !important;
+        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+    }
+
+    /* Green Highlight for Buttons on Click and Hover */
+    .btn-secondary:hover,
+    .btn-secondary:active,
+    .btn-secondary:focus {
+        border-color: var(--theme-primary) !important;
+        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+        color: white !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Daily Market Analysis</h1>
+
+        </div>
+        <a href="{{ url_for('analysis_history') }}" class="btn btn-secondary gap-2">
+            <i data-lucide="history" class="w-4 h-4"></i>
+            View History
+        </a>
+    </div>
+
+    <div class="analytics-card relative overflow-hidden">
+        <!-- Background Glow -->
+        <div
+            class="absolute top-0 right-0 w-64 h-64 bg-[var(--profit)] rounded-full blur-[128px] opacity-5 -translate-y-1/2 translate-x-1/2 pointer-events-none">
+        </div>
+
+        <form method="POST" enctype="multipart/form-data" class="space-y-6 relative z-10">
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Date -->
+                <div>
+                    <label class="input-group-label">Date</label>
+                    <div class="relative">
+                        <i data-lucide="calendar" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <input type="date" name="trade_date" required class="theme-input text-white"
+                            value="{{ current_date }}">
+                    </div>
+                </div>
+
+                <!-- Symbol -->
+                <div>
+                    <label class="input-group-label">Symbol</label>
+                    <div class="relative">
+                        <i data-lucide="bar-chart-2" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <input type="text" name="symbol" required placeholder="e.g. XAUUSD"
+                            style="text-transform: uppercase;" class="theme-input uppercase">
+                    </div>
+                </div>
+
+                <!-- Timeframe -->
+                <div>
+                    <label class="input-group-label">Timeframe</label>
+                    <div class="relative">
+                        <i data-lucide="clock" class="input-icon-left" style="color: var(--text-muted);"></i>
+                        <select name="timeframe" class="theme-select" required>
+                            <option value="" disabled selected>Select TF</option>
+                            <option value="M1">M1</option>
+                            <option value="M5">M5</option>
+                            <option value="M15">M15</option>
+                            <option value="H1">H1</option>
+                            <option value="H4">H4</option>
+                            <option value="D1">D1</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Bias (Full Width relative to grid, but here naturally flows? No, need to span) -->
+                <div class="space-y-2 md:col-span-3">
+                    <label class="input-group-label">Bias</label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Long" class="peer hidden" required>
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(0,255,153,0.1)] peer-checked:text-[var(--profit)] peer-checked:border-[var(--profit)] transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Bullish
+                            </div>
+                        </label>
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Short" class="peer hidden">
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(239,68,68,0.1)] peer-checked:text-[var(--loss)] peer-checked:border-[var(--loss)] transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Bearish
+                            </div>
+                        </label>
+                        <label class="cursor-pointer group">
+                            <input type="radio" name="bias" value="Range" class="peer hidden">
+                            <div
+                                class="px-4 py-3 rounded-lg border border-[var(--border-default)] bg-[rgba(255,255,255,0.03)] text-center text-sm font-medium text-gray-400 peer-checked:bg-[rgba(234,179,8,0.1)] peer-checked:text-yellow-400 peer-checked:border-yellow-500 transition-all hover:bg-[rgba(255,255,255,0.05)]">
+                                Range
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Before Image -->
+                <div class="space-y-2">
+                    <label class="input-group-label">Before Chart</label>
+                    <div id="before-container">
+                        <label id="before-upload-label"
+                            class="aspect-video bg-black/20 rounded-lg border border-white/10 border-dashed hover:border-[var(--theme-primary)]/50 hover:bg-[var(--theme-primary)]/5 cursor-pointer flex flex-col items-center justify-center gap-3 text-gray-500 hover:text-[var(--theme-primary)] transition-all group relative overflow-hidden">
+                            <div
+                                class="p-4 rounded-full bg-white/5 group-hover:bg-[var(--theme-primary)]/10 transition-colors">
+                                <i data-lucide="upload" class="w-8 h-8 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                            <span class="text-sm font-medium">Upload Screenshot</span>
+                            <input type="file" name="before_image" id="before_image" accept="image/*" class="hidden"
+                                onchange="previewImage(this, 'before')">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- After Image -->
+                <div class="space-y-2">
+                    <label class="input-group-label">After Chart (Result)</label>
+                    <div id="after-container">
+                        <label id="after-upload-label"
+                            class="aspect-video bg-black/20 rounded-lg border border-white/10 border-dashed hover:border-[var(--theme-primary)]/50 hover:bg-[var(--theme-primary)]/5 cursor-pointer flex flex-col items-center justify-center gap-3 text-gray-500 hover:text-[var(--theme-primary)] transition-all group relative overflow-hidden">
+                            <div
+                                class="p-4 rounded-full bg-white/5 group-hover:bg-[var(--theme-primary)]/10 transition-colors">
+                                <i data-lucide="upload" class="w-8 h-8 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                            <span class="text-sm font-medium">Add Result</span>
+                            <input type="file" name="after_image" id="after_image" accept="image/*" class="hidden"
+                                onchange="previewImage(this, 'after')">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                function previewImage(input, type) {
+                    if (input.files && input.files[0]) {
+                        const file = input.files[0];
+                        const reader = new FileReader();
+
+                        reader.onload = function (e) {
+                            const container = document.getElementById(type + '-container');
+                            const uploadLabel = document.getElementById(type + '-upload-label');
+
+                            // Hide upload label
+                            uploadLabel.style.display = 'none';
+
+                            // Create preview box
+                            const previewBox = document.createElement('div');
+                            previewBox.id = type + '-preview-box';
+                            previewBox.className = 'aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden relative group transition-all duration-300';
+                            previewBox.innerHTML = `
+                                <img src="${e.target.result}" class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40" alt="${type} preview">
+                                
+                                <!-- Overlay Actions -->
+                                <div class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                    <!-- Change Image -->
+                                    <label class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white cursor-pointer transition-all transform hover:scale-110 shadow-lg" title="Change Image">
+                                        <i data-lucide="upload" class="w-5 h-5"></i>
+                                    </label>
+                                </div>
+                                
+                                <!-- Delete Button (Top Right) -->
+                                <button type="button" onclick="deletePreview('${type}')"
+                                    class="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-500/90 text-white/80 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-sm transform translate-y-[-10px] group-hover:translate-y-0"
+                                    title="Delete Image">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                                
+                                <div class="absolute bottom-0 left-0 right-0 p-2 bg-black/80 text-xs text-center text-[var(--theme-primary)] truncate">
+                                    Selected: ${file.name}
+                                </div>
+                            `;
+
+                            // Add click handler to the change button's label
+                            const changeLabel = previewBox.querySelector('label');
+                            changeLabel.onclick = function (e) {
+                                e.stopPropagation();
+                                input.click();
+                            };
+
+                            // Remove old preview if exists
+                            const oldPreview = document.getElementById(type + '-preview-box');
+                            if (oldPreview) {
+                                oldPreview.remove();
+                            }
+
+                            container.appendChild(previewBox);
+
+                            // Re-initialize lucide icons for the new elements
+                            if (typeof lucide !== 'undefined') {
+                                lucide.createIcons();
+                            }
+                        };
+
+                        reader.readAsDataURL(file);
+                    }
+                }
+
+                function deletePreview(type) {
+                    const container = document.getElementById(type + '-container');
+                    const uploadLabel = document.getElementById(type + '-upload-label');
+                    const previewBox = document.getElementById(type + '-preview-box');
+                    const input = document.getElementById(type + '_image');
+
+                    // Clear the file input
+                    input.value = '';
+
+                    // Remove preview box
+                    if (previewBox) {
+                        previewBox.remove();
+                    }
+
+                    // Show upload label again
+                    uploadLabel.style.display = 'flex';
+                }
+            </script>
+
+            <!-- Notes -->
+            <div>
+                <label class="input-group-label">Pre-Analysis Notes</label>
+                <textarea name="analysis_notes" rows="4"
+                    placeholder="What are you seeing? Key levels, market structure, liquidity..."
+                    class="theme-input resize-y min-h-[100px]" style="padding-left: 1rem;"></textarea>
+            </div>
+
+            <!-- Action -->
+            <div class="pt-4 flex justify-end">
+                <button type="submit" class="theme-btn flex items-center justify-center gap-2 !w-auto min-w-[160px]">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Save Analysis
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.querySelector('input[name="trade_date"]').valueAsDate = new Date();
+</script>
+{% endblock %}

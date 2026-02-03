@@ -14,8 +14,9 @@ import zipfile
 import time
 from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
+from uuid import uuid4
 
-from models import db, bcrypt, User, Task, Trade, RiskSettings
+from models import db, bcrypt, User, Task, Trade, RiskSettings, AnalysisHistory
 from config import Config
 import hashlib
 import threading
@@ -750,6 +751,197 @@ def parse_mt5_csv(file_path, symbol="Unknown", progress_callback=None, user_id=N
     return result
 
 # -------------------------------------------------------------
+# ---------------- ANALYSIS ----------------
+
+@app.route("/analysis", methods=["GET", "POST"])
+@login_required
+def analysis():
+    if request.method == "POST":
+        try:
+            trade_date = datetime.strptime(request.form.get("trade_date"), "%Y-%m-%d").date()
+            symbol = request.form.get("symbol").upper()
+            timeframe = request.form.get("timeframe")
+            bias = request.form.get("bias")
+            notes = request.form.get("analysis_notes")
+
+            # Image Handling
+            before_path = None
+            if "before_image" in request.files:
+                file = request.files["before_image"]
+                if file and file.filename != "":
+                    ext = file.filename.rsplit(".", 1)[1].lower()
+                    filename = f"{uuid4()}.{ext}"
+                    # Ensure directory exists: frontend/src/uploads/analysis
+                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    full_path = os.path.join(upload_dir, filename)
+                    file.save(full_path)
+                    before_path = f"uploads/analysis/{filename}"
+
+            new_analysis = AnalysisHistory(
+                user_id=current_user.id,
+                trade_date=trade_date,
+                symbol=symbol,
+                timeframe=timeframe,
+                bias=bias,
+                before_image=before_path,
+                analysis_notes=notes
+            )
+
+            db.session.add(new_analysis)
+            db.session.commit()
+            flash("Analysis saved successfully!", "success")
+            return redirect(url_for("analysis_history"))
+            
+        except Exception as e:
+            print(f"Error saving analysis: {e}")
+            flash(f"Error saving analysis: {e}", "danger")
+            return redirect(url_for("analysis"))
+
+    return render_template("analysis.html", current_date=date.today().strftime('%Y-%m-%d'))
+
+
+
+
+
+@app.route("/analysis/edit/<int:id>", methods=["GET", "POST"])
+@login_required
+def edit_analysis(id):
+    analysis = AnalysisHistory.query.get_or_404(id)
+    # Security check
+    if analysis.user_id != current_user.id:
+        abort(403)
+
+    if request.method == "POST":
+        try:
+            analysis.trade_date = datetime.strptime(request.form.get("trade_date"), "%Y-%m-%d").date()
+            analysis.symbol = request.form.get("symbol").upper()
+            analysis.timeframe = request.form.get("timeframe")
+            analysis.bias = request.form.get("bias")
+            analysis.analysis_notes = request.form.get("analysis_notes")
+
+            # Image Update
+            if "before_image" in request.files:
+                file = request.files["before_image"]
+                if file and file.filename != "":
+                    ext = file.filename.rsplit(".", 1)[1].lower()
+                    filename = f"{uuid4()}.{ext}"
+                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    full_path = os.path.join(upload_dir, filename)
+                    file.save(full_path)
+                    analysis.before_image = f"uploads/analysis/{filename}"
+
+            if "after_image" in request.files:
+                file = request.files["after_image"]
+                if file and file.filename != "":
+                    ext = file.filename.rsplit(".", 1)[1].lower()
+                    filename = f"{uuid4()}.{ext}"
+                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    full_path = os.path.join(upload_dir, filename)
+                    file.save(full_path)
+                    analysis.after_image = f"uploads/analysis/{filename}"
+
+            db.session.commit()
+            flash("Analysis updated successfully!", "success")
+            return redirect(url_for("analysis_history"))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error updating analysis: {e}", "danger")
+
+    return render_template("edit_analysis.html", analysis=analysis)
+
+
+@app.route("/analysis/delete/<int:id>", methods=["POST"])
+@login_required
+def delete_analysis(id):
+    analysis = AnalysisHistory.query.get_or_404(id)
+    if analysis.user_id != current_user.id:
+        abort(403)
+    
+    try:
+        db.session.delete(analysis)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    return render_template("analysis.html")
+
+@app.route("/analysis/history")
+@login_required
+def analysis_history():
+    query = AnalysisHistory.query.filter_by(user_id=current_user.id)
+    
+    # Filters
+    symbol_filter = request.args.get('symbol')
+    date_filter = request.args.get('date')
+    
+    if symbol_filter:
+        query = query.filter(AnalysisHistory.symbol == symbol_filter.upper())
+    if date_filter:
+        query = query.filter(AnalysisHistory.trade_date == datetime.strptime(date_filter, '%Y-%m-%d').date())
+        
+    records = query.order_by(AnalysisHistory.trade_date.desc()).all()
+    return render_template("analysis_history.html", records=records)
+
+@app.route("/analysis/update/<int:id>", methods=["POST"])
+@login_required
+def update_analysis(id):
+    record = AnalysisHistory.query.get_or_404(id)
+    if record.user_id != current_user.id:
+        abort(403)
+        
+    try:
+        # Update Before Image
+        if "before_image" in request.files:
+            file = request.files["before_image"]
+            if file and file.filename != "":
+                ext = file.filename.rsplit(".", 1)[1].lower()
+                filename = f"{uuid4()}.{ext}"
+                upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                full_path = os.path.join(upload_dir, filename)
+                file.save(full_path)
+                record.before_image = f"uploads/analysis/{filename}"
+
+        # Update After Image
+        if "after_image" in request.files:
+            file = request.files["after_image"]
+            if file and file.filename != "":
+                ext = file.filename.rsplit(".", 1)[1].lower()
+                filename = f"{uuid4()}.{ext}"
+                upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                full_path = os.path.join(upload_dir, filename)
+                file.save(full_path)
+                record.after_image = f"uploads/analysis/{filename}"
+
+        # Update Text Fields
+        if request.form.get("mistakes"):
+            record.mistakes = request.form.get("mistakes")
+        if request.form.get("lessons"):
+            record.lessons = request.form.get("lessons")
+        if request.form.get("analysis_notes"): # Allow updating notes too
+            record.analysis_notes = request.form.get("analysis_notes")
+            
+        db.session.commit()
+        flash("Analysis updated!", "success")
+    except Exception as e:
+        print(f"Error updating analysis: {e}")
+        flash("Error updating analysis.", "danger")
+        
+    return redirect(url_for("analysis_history"))
+
+# -------------------------------------------------------------
 # ----------------EMAILS ----------------
 
 def send_reset_email(user):
@@ -765,6 +957,38 @@ def send_reset_email(user):
         mail.send(msg)
     except Exception as e:
         print(f"Error sending email: {e}")
+
+@app.route("/analysis/image/delete", methods=["POST"])
+@login_required
+def delete_analysis_image():
+    data = request.json
+    analysis = AnalysisHistory.query.get_or_404(data["analysisId"])
+
+    if analysis.user_id != current_user.id:
+        abort(403)
+
+    if data["type"] == "before" and analysis.before_image:
+        try:
+            full_path = os.path.join(app.root_path, "../frontend/src", analysis.before_image)
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        except Exception as e:
+            print(f"Error deleting file: {e}")
+        analysis.before_image = None
+
+    if data["type"] == "after" and analysis.after_image:
+        try:
+            full_path = os.path.join(app.root_path, "../frontend/src", analysis.after_image)
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        except Exception as e:
+            print(f"Error deleting file: {e}")
+        analysis.after_image = None
+
+    db.session.commit()
+    return jsonify({"success": True})
+
+
 
 # -------------------------------------------------------------
 # File upload endpoint (binary‑safe, MIME‑checked)

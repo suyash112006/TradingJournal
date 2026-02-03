@@ -143,6 +143,14 @@
         color: #22c55e;
         letter-spacing: 0.04em;
     }
+
+    /* Consistent Focus Highlight for Edit Trade */
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        border-color: var(--theme-primary) !important;
+        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+    }
 </style>
 {% endblock %}
 

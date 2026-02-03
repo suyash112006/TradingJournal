@@ -231,6 +231,12 @@
                 Analytics
             </a>
 
+            <a href="{{ url_for('analysis') }}"
+                class="nav-item {{ 'active' if request.endpoint.startswith('analysis') else '' }}">
+                <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                Analysis
+            </a>
+
             <a href="{{ url_for('settings') }}"
                 class="nav-item {{ 'active' if request.endpoint == 'settings' else '' }}">
                 <i data-lucide="settings" class="w-4 h-4"></i>

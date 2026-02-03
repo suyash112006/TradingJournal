@@ -76,3 +76,24 @@ class RiskSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     profit_target = db.Column(db.Float, default=800.0)
     max_daily_loss = db.Column(db.Float, default=500.0)
+
+class AnalysisHistory(db.Model):
+    __tablename__ = "analysis_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+
+    trade_date = db.Column(db.Date, nullable=False)
+    symbol = db.Column(db.String(20), nullable=False)
+
+    timeframe = db.Column(db.String(10))
+    bias = db.Column(db.Text)
+
+    before_image = db.Column(db.String(255))
+    after_image = db.Column(db.String(255))
+
+    analysis_notes = db.Column(db.Text)
+    mistakes = db.Column(db.Text)
+    lessons = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
