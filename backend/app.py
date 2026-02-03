@@ -63,6 +63,23 @@ with app.app_context():
     try:
         db.create_all()
         
+        # Safe Migration Helper
+        def safe_add_column(sql):
+            try:
+                db.session.execute(text(sql))
+                db.session.commit()
+                print(f"✅ Migration Success: {sql}")
+            except Exception as e:
+                db.session.rollback()
+                if "already exists" in str(e).lower() or "duplicate column" in str(e).lower():
+                    print(f"ℹ️ Migration Skipped (Column exists): {sql}")
+                else:
+                    print(f"⚠️ Migration Error ({sql}): {e}")
+
+        # Run Migrations for missing columns
+        safe_add_column("ALTER TABLE trades ADD COLUMN IF NOT EXISTS duration INTEGER")
+        safe_add_column("ALTER TABLE trades ADD COLUMN IF NOT EXISTS rr FLOAT")
+
         # Seed RiskSettings if empty
         if not RiskSettings.query.first():
             print("🛠️ Seeding default Risk Settings...")
