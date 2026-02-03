@@ -1,4 +1,31 @@
 {% extends "base.html" %}
+{% block head %}
+<style>
+    .import-drop-zone {
+        transition: all 0.3s ease;
+        border: 1px solid transparent;
+    }
+
+    .import-drop-zone.drag-over {
+        background: rgba(0, 255, 153, 0.05) !important;
+        border: 1px dashed var(--profit) !important;
+        box-shadow: 0 0 20px rgba(0, 255, 153, 0.1);
+    }
+
+    .import-drop-zone.drag-over .btn-primary {
+        transform: scale(1.05);
+        box-shadow: 0 0 15px var(--profit);
+    }
+
+    .file-counter {
+        font-size: 10px;
+        color: var(--profit);
+        font-weight: 700;
+        margin-top: 4px;
+        display: none;
+    }
+</style>
+{% endblock %}
 {% block content %}
 
 <div class="animate-box">
@@ -88,24 +115,115 @@
     </div>
 
     <!-- DATA & BACKUP -->
-    <div class="metric-card mb-6">
-        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
+    <div id="importDropZone" class="metric-card mb-6 import-drop-zone transition-all overflow-hidden">
+        <h3 class="text-lg font-semibold mb-6 flex items-center gap-2 text-white">
             <i data-lucide="database" class="w-5 h-5 text-purple-400"></i>
             Data & Backup
         </h3>
 
-        <div class="flex justify-between items-center gap-6">
-            <div>
-                <div class="font-medium text-gray-200">Export Trade History</div>
-                <div class="text-sm text-gray-500 mt-1">Download all your trades as a CSV file</div>
+        <!-- Export Section -->
+        <div class="space-y-4 mb-8">
+            <div class="flex justify-between items-center gap-6 group">
+                <div>
+                    <div class="font-medium text-gray-200">Standard Export</div>
+                    <div class="text-sm text-gray-500 mt-1">Download your trade history as a `.csv` file</div>
+                </div>
+                <a href="{{ url_for('export_csv') }}"
+                    class="btn btn-primary flex items-center gap-2 shadow-lg shadow-emerald-900/10"
+                    onclick="return confirm('Export all trades as CSV?')">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    Export CSV
+                </a>
             </div>
 
-            <a href="{{ url_for('export_csv') }}" class="btn btn-secondary"
-                onclick="return confirm('Export all trades as CSV?')">
-                Export CSV
-            </a>
+            <div class="flex justify-between items-center gap-6 pt-4 border-t border-white/5 group">
+                <div>
+                    <div class="font-medium text-emerald-400">Full Backup</div>
+                    <div class="text-sm text-gray-500 mt-1">Bundle CSV + all trade photos into a `.zip` archive</div>
+                </div>
+                <a href="{{ url_for('export_full_backup') }}"
+                    class="btn btn-primary flex items-center gap-2 shadow-lg shadow-emerald-900/10"
+                    onclick="return confirm('Export full backup (CSV + Photos) as ZIP?')">
+                    <i data-lucide="archive" class="w-4 h-4"></i>
+                    Export ZIP
+                </a>
+            </div>
+        </div>
+
+        <!-- Import Section -->
+        <div
+            class="flex justify-between items-center gap-6 pt-6 border-t border-white/5 bg-white/[0.02] -mx-8 px-8 pb-3">
+            <div>
+                <div class="font-medium text-gray-200">Bulk Import</div>
+                <div class="text-sm text-gray-500 mt-1">Drag CSV and Photos here to restore your data</div>
+                <div id="fileStatus" class="file-counter">0 files selected</div>
+            </div>
+
+            <form action="{{ url_for('import_csv') }}" method="POST" enctype="multipart/form-data" class="flex gap-2"
+                id="importForm">
+                <input type="file" name="csv_files" id="csvImportInput" accept=".csv,image/*" multiple class="hidden"
+                    onchange="handleSettingsFiles(this)">
+                <label for="csvImportInput"
+                    class="btn btn-primary flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/20">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    Import Files
+                </label>
+            </form>
         </div>
     </div>
+
+    <script>
+        function handleSettingsFiles(input) {
+            if (input.files.length > 0) {
+                const status = document.getElementById('fileStatus');
+                status.textContent = `${input.files.length} files ready. Uploading...`;
+                status.style.display = 'block';
+                input.form.submit();
+            }
+        }
+
+        // Drag and Drop Logic
+        const dropZone = document.getElementById('importDropZone');
+        const fileInput = document.getElementById('csvImportInput');
+
+        if (dropZone) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.add('drag-over');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.remove('drag-over');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', e => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    handleSettingsFiles(fileInput);
+                }
+            }, false);
+
+            // Allow clicking anywhere in the zone to trigger file input
+            dropZone.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'I' && e.target.tagName !== 'BUTTON') {
+                    fileInput.click();
+                }
+            });
+            dropZone.style.cursor = 'pointer';
+        }
+    </script>
 
     <!-- BACKTESTING DATA MANAGEMENT -->
     {% if current_user.account_type == 'backtest' %}
@@ -143,61 +261,212 @@
         <!-- Multi-Action Bar -->
         <div class="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-white/10">
             <div class="flex items-center gap-4">
-                <form action="{{ url_for('upload_mt5_csv') }}" method="POST" enctype="multipart/form-data">
-                    <input type="file" name="file" id="settingsCsvInput" accept=".csv" class="hidden"
-                        onchange="this.form.submit()">
-                    <label for="settingsCsvInput" class="btn btn-primary flex items-center gap-2 cursor-pointer">
-                        <i data-lucide="upload" class="w-4 h-4"></i>
-                        Upload New MT5 CSV
-                    </label>
-                </form>
-            </div>
+                <div class="flex items-center gap-4">
+                    <!-- Single CSV Upload -->
+                    <form action="{{ url_for('upload_mt5_csv') }}" method="POST" enctype="multipart/form-data">
+                        <input type="file" name="file" id="settingsCsvInput" accept=".csv" class="hidden">
+                        <label for="settingsCsvInput" class="btn btn-primary flex items-center gap-2 cursor-pointer">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                            Upload CSV
+                        </label>
+                    </form>
+                    ...
+                    <!-- Folder Upload -->
+                    <form action="{{ url_for('upload_mt5_folder') }}" method="POST" enctype="multipart/form-data">
+                        <input type="file" name="files" id="settingsFolderInput" webkitdirectory directory multiple
+                            class="hidden">
+                        <label for="settingsFolderInput"
+                            class="btn border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer">
+                            <i data-lucide="folder-up" class="w-4 h-4"></i>
+                            Upload Folder
+                        </label>
+                    </form>
+                </div>
 
-            <button onclick="clearAllBacktestData()"
-                class="btn border border-red-500/30 text-red-400 hover:bg-red-500/10 flex items-center gap-2">
-                <i data-lucide="eraser" class="w-4 h-4"></i>
-                Wipe All Data
-            </button>
+                <button onclick="clearAllBacktestData()"
+                    class="btn border border-red-500/30 text-red-400 hover:bg-red-500/10 flex items-center gap-2">
+                    <i data-lucide="eraser" class="w-4 h-4"></i>
+                    Wipe All Data
+                </button>
+            </div>
         </div>
+
+        <!-- Progress Bar (Hidden by default) -->
+        <div id="uploadProgressContainer" class="hidden mt-6 pt-6 border-t border-white/10">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                    <div id="progressSpinner"
+                        class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span id="uploadStatusLabel" class="text-sm font-medium text-blue-400">Uploading File...</span>
+                </div>
+                <span id="uploadStatusPercent" class="text-sm font-bold text-gray-400">1%</span>
+            </div>
+            <div class="w-full h-2.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                <div id="uploadProgressBar"
+                    class="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 w-[1%] transition-all duration-500 ease-out shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                </div>
+            </div>
+            <div id="uploadStageInfo" class="mt-2 text-[10px] text-gray-500 italic">Starting...</div>
+        </div>
+
+        <script>
+            function initSettingsUploads() {
+                const csvInput = document.getElementById('settingsCsvInput');
+                const folderInput = document.getElementById('settingsFolderInput');
+
+                if (csvInput) {
+                    csvInput.onchange = (e) => handleAjaxUpload(e.target, '/upload-mt5-csv?ajax=1');
+                }
+                if (folderInput) {
+                    folderInput.onchange = (e) => handleAjaxUpload(e.target, '/upload-mt5-folder?ajax=1', true);
+                }
+            }
+
+            async function handleAjaxUpload(inputElement, url, isFolder = false) {
+                const files = inputElement.files;
+                if (!files || files.length === 0) return;
+
+                const container = document.getElementById('uploadProgressContainer');
+                const bar = document.getElementById('uploadProgressBar');
+                const label = document.getElementById('uploadStatusLabel');
+                const percentText = document.getElementById('uploadStatusPercent');
+                const stageInfo = document.getElementById('uploadStageInfo');
+
+                // Reset and Show
+                container.classList.remove('hidden');
+                bar.style.width = '1%';
+                percentText.textContent = '1%';
+                label.textContent = isFolder ? 'Uploading Folder...' : 'Uploading CSV...';
+                stageInfo.textContent = 'Preparing data...';
+
+                const formData = new FormData();
+                if (isFolder) {
+                    for (let i = 0; i < files.length; i++) {
+                        formData.append('files', files[i]);
+                    }
+                } else {
+                    formData.append('file', files[0]);
+                }
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        label.textContent = 'Processing...';
+                        if (result.should_process) {
+                            startPollingProgress(result.symbol);
+                        } else {
+                            // Cached
+                            bar.style.width = '100%';
+                            percentText.textContent = '100%';
+                            stageInfo.textContent = 'Loaded from cache! Redirecting...';
+                            setTimeout(() => {
+                                window.location.href = '/chart';
+                            }, 1000);
+                        }
+                    } else {
+                        alert('Upload failed: ' + result.message);
+                        container.classList.add('hidden');
+                    }
+                } catch (err) {
+                    console.error('Upload error:', err);
+                    alert('An error occurred during upload.');
+                    container.classList.add('hidden');
+                }
+            }
+
+            let pollInterval = null;
+            function startPollingProgress(symbol) {
+                if (pollInterval) clearInterval(pollInterval);
+
+                const bar = document.getElementById('uploadProgressBar');
+                const percentText = document.getElementById('uploadStatusPercent');
+                const stageInfo = document.getElementById('uploadStageInfo');
+                const spinner = document.getElementById('progressSpinner');
+
+                pollInterval = setInterval(async () => {
+                    try {
+                        const res = await fetch('/api/mt5-status');
+                        const data = await res.json();
+
+                        const state = data.state || data.status;
+                        const progress = data.progress || 0;
+                        const stage = data.stage || 'Processing...';
+
+                        if (state === 'PROCESSING') {
+                            // Smooth animation updates
+                            const currentProgress = Math.max(1, progress);
+                            bar.style.width = `${currentProgress}%`;
+                            percentText.textContent = `${currentProgress}%`;
+                            stageInfo.textContent = stage;
+                        }
+                        else if (state === 'READY') {
+                            clearInterval(pollInterval);
+                            bar.style.width = '100%';
+                            percentText.textContent = '100%';
+                            stageInfo.textContent = 'Success! Opening chart...';
+                            spinner.classList.add('hidden');
+
+                            setTimeout(() => {
+                                window.location.href = '/chart';
+                            }, 1500);
+                        }
+                        else if (state === 'ERROR') {
+                            clearInterval(pollInterval);
+                            stageInfo.textContent = 'Error: ' + (data.message || 'Processing failed');
+                            stageInfo.className = 'mt-2 text-[10px] text-red-500 font-bold';
+                            spinner.classList.add('hidden');
+                        }
+                    } catch (e) {
+                        console.warn('Polling error:', e);
+                    }
+                }, 400); // Polling every 400ms for smoothness
+            }
+
+            function deleteSymbol(symbol) {
+                if (!confirm(`Are you sure you want to delete all processed data for ${symbol}?`)) return;
+
+                fetch('/api/backtest/delete-symbol', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol: symbol })
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') location.reload();
+                        else alert(data.message);
+                    })
+                    .catch(err => console.error('Delete error:', err));
+            }
+
+            function clearAllBacktestData() {
+                if (!confirm('This will DELETE ALL uploaded symbols and processed data. This cannot be undone. Proceed?')) return;
+
+                fetch('/api/backtest/clear-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            localStorage.removeItem('chart_uploaded_data');
+                            localStorage.removeItem('chart_active_timeframe');
+                            location.reload();
+                        } else alert(data.message);
+                    })
+                    .catch(err => console.error('Clear error:', err));
+            }
+
+            // Initialize on load
+            document.addEventListener('DOMContentLoaded', initSettingsUploads);
+        </script>
+        {% endif %}
+
     </div>
 
-    <script>
-        function deleteSymbol(symbol) {
-            if (!confirm(`Are you sure you want to delete all processed data for ${symbol}?`)) return;
-
-            fetch('/api/backtest/delete-symbol', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol: symbol })
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === 'success') location.reload();
-                    else alert(data.message);
-                })
-                .catch(err => console.error('Delete error:', err));
-        }
-
-        function clearAllBacktestData() {
-            if (!confirm('This will DELETE ALL uploaded symbols and processed data. This cannot be undone. Proceed?')) return;
-
-            fetch('/api/backtest/clear-all', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        localStorage.removeItem('chart_uploaded_data');
-                        localStorage.removeItem('chart_active_timeframe');
-                        location.reload();
-                    } else alert(data.message);
-                })
-                .catch(err => console.error('Clear error:', err));
-        }
-    </script>
-    {% endif %}
-
-</div>
-
-{% endblock %}
+    {% endblock %}

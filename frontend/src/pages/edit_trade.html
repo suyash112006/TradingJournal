@@ -121,6 +121,28 @@
     .preview-item:hover .remove-btn {
         opacity: 1;
     }
+
+    /* RR card — SAME AS INPUT */
+    .rr-card {
+        height: 48px;
+        padding: 0 16px;
+        border-radius: 12px;
+        background: #0b0b0f;
+        border: 1px solid #1f2937;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    /* RR Value Styling */
+    .rr-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #22c55e;
+        letter-spacing: 0.04em;
+    }
 </style>
 {% endblock %}
 
@@ -168,6 +190,14 @@
                 </div>
 
                 <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Duration
+                        (Minutes)</label>
+                    <input type="number" step="any" name="duration"
+                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                        placeholder="e.g. 45" value="{{ (trade.duration / 60)|round(2) if trade.duration else '' }}">
+                </div>
+
+                <div class="form-group">
                     <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Direction</label>
                     <div class="relative">
                         <select name="direction"
@@ -185,6 +215,8 @@
                         class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
                         placeholder="e.g. Breakout" value="{{ trade.strategy or '' }}">
                 </div>
+
+
 
 
 
@@ -233,19 +265,7 @@
                         growth calculation</small>
                 </div>
 
-                <!-- R:R Separate Box -->
-                <div id="rrDisplay"
-                    class="hidden mt-3 bg-[#0b0b0f] border border-gray-800 rounded-xl px-4 py-3 flex justify-between items-center font-mono text-xs"
-                    title="Calculated using Entry, Stop & Take Profit">
-                    <span class="text-gray-500 uppercase tracking-wider">Risk : Reward</span>
-                    <div class="text-right">
-                        <span id="rrValue" class="font-bold text-[#00ff99]"></span>
-                        {% if avg_rr %}
-                        <div class="text-[10px] text-gray-600 mt-0.5">Avg: <span class="text-gray-400">1:{{
-                                "%.2f"|format(avg_rr) }}</span></div>
-                        {% endif %}
-                    </div>
-                </div>
+
             </div>
         </div>
 
@@ -255,7 +275,7 @@
         <!-- Psychology Section (Full Width) -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- Emotion + Discipline (SAME COLUMN) -->
-            <div class="form-group space-y-4">
+            <div class="form-group">
                 <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
                     Emotion / Mindset
                 </label>
@@ -277,7 +297,7 @@
 
                 <!-- Discipline Rating (MOVED HERE) -->
                 <!-- Discipline Rating (MOVED HERE) -->
-                <div class="discipline-box">
+                <div class="discipline-box mt-4">
                     <label class="discipline-title">Discipline Rating</label>
 
                     <div class="discipline-row">
@@ -299,8 +319,20 @@
                 </div>
             </div>
 
-            <!-- Right column intentionally empty -->
-            <div></div>
+            <!-- Right column: Risk : Reward (Moved Here) -->
+            <div class="form-group">
+                <!-- Invisible label to force alignment -->
+                <label class="block text-xs font-bold uppercase tracking-wider text-transparent mb-2 select-none">
+                    Risk : Reward
+                </label>
+                <div id="rrDisplay" class="hidden rr-card w-full justify-between"
+                    title="Calculated using Entry, Stop & Take Profit">
+                    <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Risk : Reward</span>
+                    <div class="text-right">
+                        <span id="rrValue" class="rr-value"></span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="form-group mb-6">
@@ -319,8 +351,10 @@
             <div id="previewContainer" class="preview-grid mb-6">
                 {% for src in screenshots %}
                 <div class="preview-item" draggable="true" data-name="{{ src }}">
-                    <img src="{{ url_for('static', filename=src) if 'uploads/' in src else src }}"
-                        title="Drag to reorder | Click to enlarge" onclick="openFullscreen(this.src, this)">
+                    <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) if 'uploads/' in src else src }}"
+                        data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
+                        onclick="openFullscreen(this.src, this)"
+                        onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
                     <div class="remove-btn" onclick="this.parentElement.remove(); updateOrder();">×</div>
                 </div>
                 {% endfor %}
@@ -365,6 +399,21 @@
         </div>
 
     </form>
+</div>
+
+<!-- Toast Notification Container -->
+<div id="toast"
+    class="fixed bottom-6 right-6 px-6 py-4 rounded-xl bg-[#0b0b0f] border border-gray-800 text-white shadow-2xl transform translate-y-24 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+    <div id="toastIcon" class="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+    </div>
+    <div>
+        <h4 id="toastTitle" class="text-sm font-bold">Success</h4>
+        <p id="toastMessage" class="text-xs text-gray-400">Action completed successfully</p>
+    </div>
 </div>
 
 <script>
@@ -444,6 +493,13 @@
                 img.src = e.target.result;
                 img.title = "Drag to reorder | Click to enlarge";
                 img.onclick = () => openFullscreen(e.target.result, img);
+                img.onerror = () => {
+                    img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
+                    img.classList.add('broken-link');
+                    img.dataset.originalSrc = file.name; // Fallback
+                    img.style.padding = '20px';
+                    img.style.objectFit = 'contain';
+                };
 
                 const removeBtn = document.createElement("div");
                 removeBtn.className = "remove-btn";
@@ -515,6 +571,102 @@
 </script>
 
 <script>
+    // --- Toast Logic ---
+    function showToast(title, message, type = 'success') {
+        const toast = document.getElementById('toast');
+        const toastTitle = document.getElementById('toastTitle');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastIcon = document.getElementById('toastIcon');
+
+        toastTitle.textContent = title;
+        toastMessage.textContent = message;
+
+        if (type === 'error') {
+            toastIcon.className = "w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center text-red-500";
+            toastIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+        } else {
+            toastIcon.className = "w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500";
+            toastIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        }
+
+        toast.classList.remove('translate-y-24', 'opacity-0');
+
+        setTimeout(() => {
+            toast.classList.add('translate-y-24', 'opacity-0');
+        }, 3000);
+    }
+
+    // --- Global Paste Listener ---
+    document.addEventListener('paste', (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+
+        for (let index in items) {
+            const item = items[index];
+
+            // Handle Image Files
+            if (item.kind === 'file' && item.type.includes('image/')) {
+                const blob = item.getAsFile();
+                const file = new File([blob], `pasted_image_${Date.now()}.png`, { type: 'image/png' });
+
+                // Create a DataTransfer to simulate file input selection
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+
+                // Simulate adding to our preview logic
+                // We reuse handleMultipleFiles but need to mock the input
+                const mockInput = { files: [file] };
+                handleMultipleFiles(mockInput);
+
+                showToast('Image Added', 'Image pasted from clipboard');
+                return;
+            }
+
+            // Handle Image URLs (text)
+            if (item.kind === 'string' && item.type === 'text/plain') {
+                item.getAsString((text) => {
+                    if (text.match(/\.(jpeg|jpg|gif|png)$/) != null || text.startsWith('http')) {
+                        // Check if it looks like an image URL
+                        const container = document.getElementById("previewContainer");
+                        const div = document.createElement("div");
+                        div.className = "preview-item";
+                        div.draggable = true;
+                        div.dataset.name = text;
+
+                        const img = document.createElement("img");
+                        img.src = text;
+                        img.title = "Drag to reorder | Click to enlarge";
+                        img.onclick = () => openFullscreen(text, img);
+                        img.onerror = () => {
+                            img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
+                            img.classList.add('broken-link');
+                            img.dataset.originalSrc = text;
+                            img.style.padding = '20px';
+                            img.style.objectFit = 'contain';
+                        };
+
+                        const removeBtn = document.createElement("div");
+                        removeBtn.className = "remove-btn";
+                        removeBtn.innerHTML = "×";
+                        removeBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            div.remove();
+                            updateOrder();
+                        };
+
+                        div.appendChild(img);
+                        div.appendChild(removeBtn);
+                        container.appendChild(div);
+
+                        setupDragEvents(div);
+                        updateOrder();
+
+                        showToast('URL Added', 'Image URL pasted successfully');
+                    }
+                });
+            }
+        }
+    });
+
     // R:R Calculation Logic for Edit Page
     document.addEventListener('DOMContentLoaded', function () {
         const entryInput = document.querySelector('input[name="entry_price"]');

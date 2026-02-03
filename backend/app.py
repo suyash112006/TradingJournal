@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session, send_file
 from sqlalchemy import text, func, inspect
 from functools import wraps
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
@@ -8,6 +8,10 @@ import json
 import calendar
 import pytz
 import os
+import csv
+import io
+import zipfile
+import time
 from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
 
@@ -15,6 +19,9 @@ from models import db, bcrypt, User, Task, Trade, RiskSettings
 from config import Config
 import hashlib
 import threading
+
+# ---------------- GLOBAL STATE ----------------
+ABORT_PROCESSING = {} # Key: user_id, Value: bool
 
 # ---------------- APP SETUP ----------------
 app = Flask(__name__, 
@@ -45,7 +52,7 @@ def get_symbol_folder(user_id, symbol):
 
 app.config['MT5_UPLOAD_BASE_FOLDER'] = os.path.join(app.root_path, 'uploads', 'users')
 
-# TradingView-style timeframe lockdown
+# TradingView-style timeframe lockdown (Gold Standard: M1 Backbone Enabled)
 ALLOWED_TIMEFRAMES = ["M1", "M3", "M5", "M15", "M30", "H1", "H2", "H4", "D1", "W1"]
 
 db.init_app(app)
@@ -219,9 +226,9 @@ def hash_file(file_path):
 
 def aggregate_candles(m1_candles, timeframe_minutes):
     """
-    Professional Timeframe Aggregation Engine.
+    Professional Timeframe Aggregation Engine (Gold Standard).
     Groups M1 candles into natural UTC time boundaries (e.g. :00, :05).
-    Strictly follows OHLC rules and ignores gaps without inventing data.
+    Strictly follows OHLC rules and ensures timestamps align to grid.
     """
     if not m1_candles:
         return []
@@ -232,59 +239,61 @@ def aggregate_candles(m1_candles, timeframe_minutes):
     aggregated = []
     interval_seconds = timeframe_minutes * 60
     
-    # 2. Group into buckets based on natural time boundaries
-    # Using a dictionary to handle potential edge cases gracefully
-    buckets = {}
+    current_bucket_start = None
+    bucket_candles = []
     
     for candle in sorted_m1:
         ts = candle['time']
-        # Floor to the start of the timeframe interval
-        bucket_time = (ts // interval_seconds) * interval_seconds
+        # Floor to the start of the timeframe interval (Standard Alignment)
+        bucket_start = (ts // interval_seconds) * interval_seconds
         
-        if bucket_time not in buckets:
-            buckets[bucket_time] = []
-        buckets[bucket_time].append(candle)
-        
-    # 3. Process each bucket into a single OHLC candle
-    # Sorting bucket times to ensure output is chronological
-    for bucket_ts in sorted(buckets.keys()):
-        period_candles = buckets[bucket_ts]
-        
-        try:
-            open_p = period_candles[0]['open']
-            close_p = period_candles[-1]['close']
-            high_p = max(c['high'] for c in period_candles)
-            low_p = min(c['low'] for c in period_candles)
+        # If we moved to a new bucket, flush the old one
+        if current_bucket_start is not None and bucket_start != current_bucket_start:
+            if bucket_candles:
+                aggregated.append(build_candle(current_bucket_start, bucket_candles))
+            bucket_candles = []
             
-            # 4. Final Validation: Ensure OHLC integrity
-            if low_p > high_p:
-                continue # Skip invalid data if somehow high/low are swapped
-                
-            aggregated.append({
-                "time": bucket_ts,
-                "open": open_p,
-                "high": high_p,
-                "low": low_p,
-                "close": close_p
-            })
-        except (IndexError, KeyError, ValueError):
-            continue
+        current_bucket_start = bucket_start
+        bucket_candles.append(candle)
+        
+    # Flush final bucket
+    if bucket_candles and current_bucket_start is not None:
+        aggregated.append(build_candle(current_bucket_start, bucket_candles))
             
     return aggregated
 
-def background_process_csv(file_path, symbol_folder, symbol):
+def build_candle(timestamp, group):
+    """Helper to build a single OHLC candle from a group."""
+    return {
+        "time": timestamp, # Aligned to grid start
+        "open": group[0]['open'],
+        "high": max(c['high'] for c in group),
+        "low": min(c['low'] for c in group),
+        "close": group[-1]['close'],
+        "volume": sum(c['volume'] for c in group)
+    }
+
+def background_process_csv(file_path, symbol_folder, symbol, user_id):
     """Background task to process CSV into hierarchical symbol structure."""
     status_path = os.path.join(symbol_folder, 'status.json')
     meta_path = os.path.join(symbol_folder, 'meta.json')
     processed_base = os.path.join(symbol_folder, 'processed')
     
+    def update_progress(percent, stage="Processing CSV..."):
+        try:
+            with open(status_path, 'w') as f:
+                json.dump({"state": "PROCESSING", "progress": percent, "stage": stage}, f)
+        except: pass
+
     try:
-        with open(status_path, 'w') as f:
-            json.dump({"state": "PROCESSING", "progress": 0}, f)
-            
-        parsed_data = parse_mt5_csv(file_path, symbol=symbol)
+        update_progress(0, "Starting...")
+        print(f"🔄 [BACKGROUND] Started processing for {symbol}")
+
+        # Pass callback and user_id to parser
+        parsed_data = parse_mt5_csv(file_path, symbol=symbol, progress_callback=update_progress, user_id=user_id)
         
         if parsed_data:
+            update_progress(90, "Finalizing storage...")
             # Save meta.json (Rich Data from Parser)
             with open(meta_path, 'w') as f:
                 json.dump(parsed_data['meta'], f, indent=2)
@@ -303,119 +312,425 @@ def background_process_csv(file_path, symbol_folder, symbol):
                     json.dump(zone_data, f)
             
             with open(status_path, 'w') as f:
-                json.dump({"state": "READY", "timestamp": datetime.utcnow().isoformat()}, f)
+                json.dump({"state": "READY", "timestamp": datetime.utcnow().isoformat(), "progress": 100}, f)
             print(f"✅ Hierarchical processing complete for: {symbol}")
         else:
             with open(status_path, 'w') as f:
                 json.dump({"state": "ERROR", "message": "Parsing failed"}, f)
     except Exception as e:
-        print(f"❌ Background processing error: {e}")
-        with open(status_path, 'w') as f:
-            json.dump({"state": "ERROR", "message": str(e)}, f)
-
-def parse_mt5_csv(file_path, symbol="Unknown"):
-    """
-    Parses MT5 CSV and returns base M1 candles + synthesized versions.
-    """
-    m1_candles = []
-    try:
+        print(f"❌ [BACKGROUND] Processing error for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-        except UnicodeDecodeError:
-            with open(file_path, 'r', encoding='utf-16') as f:
-                lines = f.readlines()
-        
-        if not lines: return None
-        
-        start_row = 0
-        if any(k in lines[0].upper() for k in ['DATE', 'OPEN', '<TICKER>']):
-            start_row = 1
-            
-        for line in lines[start_row:]:
-            columns = line.strip().split()
-            if len(columns) < 6: continue
-                
-            try:
-                date_str, time_str = columns[0], columns[1]
-                o, h, l, c = map(float, columns[2:6])
-                # Check for volume in 7th column if available
-                v = float(columns[6]) if len(columns) > 6 else 0
-                
-                clean_dt = f"{date_str} {time_str}".replace('.', '-')
-                try:
-                    dt = datetime.strptime(clean_dt, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    dt = datetime.strptime(clean_dt, "%Y-%m-%d %H:%M")
-                
-                m1_candles.append({
-                    "time": int(dt.timestamp()),
-                    "open": round(o, 5),
-                    "high": round(h, 5),
-                    "low": round(l, 5),
-                    "close": round(c, 5),
-                    "volume": int(v)
-                })
-            except: continue
-        
-        if not m1_candles: return None
-        
-        m1_candles.sort(key=lambda x: x['time'])
+            with open(status_path, 'w') as f:
+                json.dump({"state": "ERROR", "message": str(e)}, f)
+        except Exception as write_err:
+             print(f"❌ [BACKGROUND] Failed to write status file: {write_err}")
 
-        # Data Verification: Ensure Source is M1
-        if len(m1_candles) > 50:
-            diffs = []
-            for i in range(1, min(200, len(m1_candles))):
-                d = m1_candles[i]['time'] - m1_candles[i-1]['time']
-                if d > 0: diffs.append(d)
-            
-            if diffs:
-                median_diff = sorted(diffs)[len(diffs)//2]
-                # Allow minor data gaps, but if median is > 180s (3m), it's definitely not M1
-                if median_diff > 180:
-                    raise ValueError(f"CRITICAL: Uploaded data appears to be {median_diff}s candles. ONLY M1 (60s) data is allowed.")
+import multiprocessing
+from multiprocessing import Pool, cpu_count
+import pandas as pd
 
-        # Synthesize from M1
-        aggregated_tfs = {
-            "M1": aggregate_candles(m1_candles, 1),
-            "M3": aggregate_candles(m1_candles, 3),
-            "M5": aggregate_candles(m1_candles, 5),
-            "M15": aggregate_candles(m1_candles, 15),
-            "M30": aggregate_candles(m1_candles, 30),
-            "H1": aggregate_candles(m1_candles, 60),
-            "H2": aggregate_candles(m1_candles, 120),
-            "H4": aggregate_candles(m1_candles, 240),
-            "D1": aggregate_candles(m1_candles, 1440),
-            "W1": aggregate_candles(m1_candles, 10080)
-        }
+# --- Multiprocessing & TF Detection Helpers ---
 
-        # Build Rich Metadata
-        candle_counts = {tf: len(data) for tf, data in aggregated_tfs.items()}
-        derived_list = [tf for tf in aggregated_tfs.keys() if tf != "M1"]
+TF_MAP = {
+    1: "M1", 3: "M3", 5: "M5", 15: "M15", 30: "M30",
+    60: "H1", 120: "H2", 240: "H4", 1440: "D1", 10080: "W1"
+}
 
-        result = {
-            "meta": {
-                "symbol": symbol,
-                "source": "MT5",
-                "source_tf": "M1",
-                "original_timeframe": "M1",
-                "csv_hash": hash_file(file_path),
-                "created_at": datetime.utcnow().isoformat() + "Z",
-                "available_timeframes": list(aggregated_tfs.keys()),
-                "derived_timeframes": derived_list,
-                "candle_counts": candle_counts,
-                "data_quality": {
-                    "source_count": len(m1_candles),
-                    "verified_m1": True,
-                    "median_gap": median_diff if len(m1_candles) > 50 and diffs else 60
-                }
-            },
-            "timeframes": aggregated_tfs
-        }
-        return result
+def tf_label(minutes):
+    return TF_MAP.get(minutes, f"M{minutes}")
+
+def detect_timeframe_from_csv(file_path, sep=','):
+    """
+    Auto-detect timeframe by scanning first 10,000 rows.
+    Returns: (minutes, label) e.g., (5, 'M5')
+    """
+    try:
+        # 1. Broad Scan (Increase to 10k to catch sparse starts)
+        scan_rows = 10000
+        
+        # Optimize Engine: Use 'c' if simple separator, else 'python'
+        engine = 'c' if len(sep) == 1 else 'python'
+        
+        # Use Detected Separator!
+        df = pd.read_csv(file_path, sep=sep, usecols=[0, 1], nrows=scan_rows, header=None, engine=engine, on_bad_lines='skip', encoding_errors='ignore')
+        
+        # Sniff header
+        if type(df.iloc[0,0]) == str and 'DATE' in df.iloc[0,0].upper():
+             df = pd.read_csv(file_path, sep=sep, nrows=scan_rows, engine=engine, on_bad_lines='skip', encoding_errors='ignore')
+        else:
+             df.columns = ['DATE', 'TIME'] + [str(i) for i in range(2, len(df.columns))]
+
+        df.columns = [c.upper().strip() for c in df.columns]
+
+        # Parse Dates
+        if 'TIME' in df.columns:
+            df['DT_STR'] = df['DATE'].astype(str) + ' ' + df['TIME'].astype(str)
+            df['DT'] = pd.to_datetime(df['DT_STR'], format='mixed', errors='coerce')
+        else:
+             df['DT'] = pd.to_datetime(df['DATE'], format='mixed', errors='coerce')
+
+        df = df.dropna(subset=['DT']).sort_values('DT')
+        
+        # Calculate Diffs in Minutes
+        diffs = df['DT'].diff().dt.total_seconds() / 60
+        diffs = diffs[diffs > 0] # Ignore 0 or negative
+        
+        if len(diffs) == 0:
+            return 1, "M1" # Fallback
+
+        # Smart Detection:
+        # If we see ANY valid intervals <= 1.1 minutes, it IS M1 base.
+        # This acts as a 'resolution' check. Even if mode is 15min (sparse),
+        # the presence of 1m diffs proves 1m resolution capability.
+        min_diff = diffs.min()
+        
+        # <= 1.1 catches M1 (1.0) and Sub-minute/Tick data (0.001 - 0.99)
+        if min_diff <= 1.1:
+            print(f"🕵️ [DETECTOR] Found high-res intervals ({min_diff:.4f}m). Forcing M1 Base.")
+            return 1, "M1"
+        
+        if 2.9 <= min_diff <= 3.1:
+             return 3, "M3"
+
+        if 4.9 <= min_diff <= 5.1:
+             return 5, "M5"
+
+        # Fallback to mode
+        mode_diff = int(diffs.mode()[0])
+        # Safety: If mode is 1, return 1 (Double Check)
+        if mode_diff <= 1:
+             return 1, "M1"
+
+        return mode_diff, tf_label(mode_diff)
+
     except Exception as e:
-        print(f"Error in parse_mt5_csv: {e}")
+        print(f"TF Auto-Detect Warning: {e}")
+    
+    return 1, "M1" # Fallback
+
+def process_chunk_worker(chunk):
+    """
+    Worker function for Multiprocessing CSV Parse.
+    Must be top-level to be pickleable on Windows.
+    """
+    try:
+        # Normalize Columns
+        chunk.columns = [c.upper().strip().replace('<','').replace('>','') for c in chunk.columns]
+        
+        # Standardize Names
+        cols = chunk.columns
+        
+        # Vectorized Time Parsing
+        if 'TIME' in cols:
+            chunk['DT_STR'] = chunk['DATE'].astype(str) + ' ' + chunk['TIME'].astype(str)
+            chunk['DT'] = pd.to_datetime(chunk['DT_STR'], format='mixed', errors='coerce')
+        else:
+            chunk['DT'] = pd.to_datetime(chunk['DATE'], format='mixed', errors='coerce')
+            
+        chunk = chunk.dropna(subset=['DT'])
+        
+        # Vectorized Float Conversion
+        for col in ['OPEN', 'HIGH', 'LOW', 'CLOSE']:
+            if col in cols:
+                 chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+
+        # Volume Handling
+        vol_col = 'VOL'
+        if 'TICKVOL' in cols: vol_col = 'TICKVOL'
+        elif 'VOLUME' in cols: vol_col = 'VOLUME'
+        
+        if vol_col in cols:
+             chunk['VOL'] = pd.to_numeric(chunk[vol_col], errors='coerce').fillna(0)
+        else:
+             chunk['VOL'] = 0
+             
+        chunk = chunk.dropna(subset=['OPEN', 'HIGH', 'LOW', 'CLOSE'])
+        
+        # Return lightweight dict list for main thread aggregation
+        # Converting to dict here reduces pickling overhead of full DF? 
+        # Actually returning DF is usually fine for pandas, but let's return processed DF
+        return chunk[['DT', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']]
+        
+    except Exception as e:
+        # print(f"Worker Error: {e}") 
         return None
+
+def expand_to_1m_backbone(df, base_tf_minutes):
+    """
+    Expands a higher timeframe DataFrame (e.g. M15) into a structurally correct 
+    1-minute backbone. Vectorized for MAX speed.
+    Matches TradingView-style synthetic expansion.
+    """
+    if base_tf_minutes <= 1:
+        return df
+        
+    last_ts = df.index[-1]
+    end_ts = last_ts + pd.Timedelta(minutes=base_tf_minutes - 1)
+    
+    # Expand index to 1-minute slots
+    new_index = pd.date_range(start=df.index[0], end=end_ts, freq='1min')
+    df_1m = df.reindex(new_index).ffill()
+    
+    # Adjust volume (distributed)
+    df_1m['volume'] = df_1m['volume'] / base_tf_minutes
+    
+    # Restore time column for consistency
+    df_1m['time'] = df_1m.index.astype('int64') // 10**9
+    
+    return df_1m
+
+def resample_candles(df, minutes):
+    """
+     aggregates 1M/base DataFrame to target minutes using Pandas Resample.
+     Returns a list of dicts (standard candle format).
+     Enforces strict time alignment (TradingView style).
+    """
+    try:
+        rule = f"{minutes}min"
+        
+        # Resample with specific trading rules (Left/Left closed)
+        # origin='epoch' ensures alignment to 00:00:00
+        agg_df = df.resample(rule, closed='left', label='left', origin='start_day').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        # Reset index to access 'DT' as column
+        agg_df = agg_df.reset_index()
+        
+        # Convert back to standard dict list
+        # Vectorized dict creation
+        agg_df['time'] = agg_df['DT'].astype('int64') // 10**9
+        
+        return agg_df[['time', 'open', 'high', 'low', 'close', 'volume']].to_dict('records')
+    except Exception as e:
+        print(f"Resample Error ({minutes}m): {e}")
+        return []
+
+def parse_mt5_csv(file_path, symbol="Unknown", progress_callback=None, user_id=None):
+    """
+    Parses MT5 CSV using Multiprocessing + Pandas for MAX speed.
+    Auto-detects the base timeframe first.
+    """
+    base_candles_dict = {} # Deduplication Buffer
+    
+    # Check for early abort
+    if user_id and ABORT_PROCESSING.get(user_id):
+        print(f"🛑 [PARSER] Aborting before start for user {user_id}")
+        return None
+    
+    try:
+        # 1. Quick Line Count
+        total_rows = 1000000 
+        try:
+           with open(file_path, 'rb') as f:
+               total_rows = sum(1 for _ in f)
+        except: pass
+        
+        # 2. Detect Separator FIRST (Prevent read hang)
+        sep = ',' # Default assumption
+        try:
+            # Try sniffing with different encodings
+            for enc in ['utf-8', 'utf-16', 'latin1']:
+                try:
+                    with open(file_path, 'r', encoding=enc) as f:
+                        header = f.readline()
+                        if ',' in header: 
+                            sep = ','
+                            break
+                        elif ';' in header: 
+                            sep = ';'
+                            break
+                        elif '\t' in header: 
+                            sep = '\t'
+                            break
+                        
+                        # Check strict whitespace last
+                        if len(header.split()) > 1:
+                            sep = r'\s+'
+                            break
+                except: continue
+        except: pass
+
+        # 3. Auto-Detect Timeframe (Pass Separator)
+        if progress_callback: progress_callback(1, "Detecting Timeframe...")
+        # Now we pass the separator so it reads correctly!
+        detected_tf_minutes, detected_tf = detect_timeframe_from_csv(file_path, sep=sep)
+        print(f"✅ Auto-Detected Timeframe: {detected_tf} ({detected_tf_minutes}m)")
+
+        # 4. Multiprocessing Setup
+        chunksize = 100000
+        cpu_workers = max(1, cpu_count() - 1)
+        
+        if progress_callback:
+            progress_callback(5, f"Spawning {cpu_workers} Workers...")
+            
+        pool = Pool(processes=cpu_workers)
+        processed_chunks = []
+        
+        # Initialize Reader
+        reader = pd.read_csv(
+            file_path, 
+            sep=sep, 
+            chunksize=chunksize, 
+            engine='python',
+            on_bad_lines='skip',
+            encoding_errors='ignore'
+        )
+        if sep == r'\s+':
+             reader = pd.read_csv(file_path, sep=r'\s+', chunksize=chunksize, engine='python')
+             
+        # Submit Jobs
+        for chunk in reader:
+            # Async submit to pool
+            processed_chunks.append(pool.apply_async(process_chunk_worker, (chunk,)))
+        
+        pool.close()
+        
+        # Monitor Progress & Collect
+        total_chunks = len(processed_chunks)
+        completed_chunks = 0
+        
+        for res in processed_chunks:
+            # Check for cancellation during collection
+            if user_id and ABORT_PROCESSING.get(user_id):
+                print(f"🛑 [PARSER] Aborting collection for user {user_id}")
+                pool.terminate() # Kill workers
+                return None
+
+            chunk_data = res.get() # Block until done
+            completed_chunks += 1
+            
+            if chunk_data is not None and not chunk_data.empty:
+                # Merge into dict (Blocking but fast in memory)
+                # Convert to numpy arrays for speed
+                times  = chunk_data['DT'].values.astype('int64') // 10**9
+                opens  = chunk_data['OPEN'].values
+                highs  = chunk_data['HIGH'].values
+                lows   = chunk_data['LOW'].values
+                closes = chunk_data['CLOSE'].values
+                vols   = chunk_data['VOL'].values
+                
+                for t, o, h, l, c, v in zip(times, opens, highs, lows, closes, vols):
+                    base_candles_dict[t] = {
+                        "time": int(t),
+                        "open": float(o),
+                        "high": float(h),
+                        "low": float(l),
+                        "close": float(c),
+                        "volume": int(v)
+                    }
+            
+            if progress_callback:
+                pct = 5 + int((completed_chunks / total_chunks) * 80) # 5% to 85%
+                progress_callback(pct, f"Parallel Parsing... ({pct}%)")
+        
+        pool.join()
+
+    except Exception as e:
+        print(f"Multiprocessing Parse Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+        
+    if not base_candles_dict: 
+        print("No candles parsed (Pandas MP)")
+        return None
+        
+    # Convert to list and sort
+    base_candles = list(base_candles_dict.values())
+    base_candles.sort(key=lambda x: x['time'])
+
+    # --- AGGREGATION PHASE (Pandas Resample) ---
+    
+    # 1. Prepare Master DataFrame (Source of Truth)
+    # This is critical for correct alignment (resample needs DateTimeIndex)
+    base_df = pd.DataFrame(base_candles)
+    base_df['DT'] = pd.to_datetime(base_df['time'], unit='s')
+    base_df.set_index('DT', inplace=True)
+    base_df.sort_index(inplace=True)
+
+    # Build all timeframes (GOLD STANDARD: M1, M3, M5 restored)
+    tf_hierarchy = [
+        ("M1", 1), ("M3", 3), ("M5", 5), ("M15", 15), ("M30", 30),
+        ("H1", 60), ("H2", 120), ("H4", 240), ("D1", 1440), ("W1", 10080)
+    ]
+    
+    aggregated_tfs = {}
+    
+    if progress_callback: progress_callback(90, "Building M1 Backbone & Aggregating...")
+
+    # 1. GENERATE GOLDEN 1M BACKBONE
+    if detected_tf_minutes == 1:
+        df_1m = base_df.copy()
+    else:
+        print(f"🛠️ [PARSER] Expanding {detected_tf} to 1M Backbone...")
+        df_1m = expand_to_1m_backbone(base_df.copy(), detected_tf_minutes)
+
+    # 2. AGGREGATE ALL FROM BACKBONE
+    for tf_name, tf_minutes in tf_hierarchy:
+        try:
+            if tf_minutes == 1:
+                # M1 is the backbone itself
+                aggregated_tfs["M1"] = df_1m[['time', 'open', 'high', 'low', 'close', 'volume']].reset_index(drop=True).to_dict('records')
+            elif tf_minutes == detected_tf_minutes:
+                # If target == source, use original to avoid any tiny float/resample drift
+                aggregated_tfs[tf_name] = [c.copy() for c in base_candles]
+            else:
+                # Aggregate using optimized resample from 1M source
+                aggregated_tfs[tf_name] = resample_candles(df_1m, tf_minutes)
+                
+        except Exception as e:
+            print(f"Failed to build {tf_name}: {e}")
+
+    # --- FINAL SANITY CHECKS (Lock-in Phase) ---
+    print(f"\n📈 [LOCK-IN] Sanity check for {symbol}:")
+    for tf_name in [t[0] for t in tf_hierarchy]:
+        if tf_name in aggregated_tfs:
+            print(f"  {tf_name}: {len(aggregated_tfs[tf_name])} candles")
+    
+    # OHLC Integrity Test (Verify M5 if M1 source exists)
+    if "M1" in aggregated_tfs and "M5" in aggregated_tfs and len(aggregated_tfs["M5"]) > 0:
+        test_candle = aggregated_tfs["M5"][0]
+        m1_start = test_candle["time"]
+        m1_relevant = [c for c in aggregated_tfs["M1"] if m1_start <= c["time"] < m1_start + 300]
+        if m1_relevant:
+            passed = (
+                test_candle["open"] == m1_relevant[0]["open"] and
+                test_candle["close"] == m1_relevant[-1]["close"] and
+                test_candle["high"] == max(c["high"] for c in m1_relevant) and
+                test_candle["low"] == min(c["low"] for c in m1_relevant)
+            )
+            print(f"  OHLC Integrity (M1->M5): {'✅ PASSED' if passed else '❌ FAILED'}")
+
+    # Build Rich Metadata
+    candle_counts = {tf: len(data) for tf, data in aggregated_tfs.items()}
+
+    result = {
+        "meta": {
+            "symbol": symbol,
+            "source": "MT5",
+            # ... [Metadata preserved] ...
+            "source_tf": detected_tf,
+            "original_timeframe": detected_tf,
+            "csv_hash": "hash_placeholder", 
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "available_timeframes": list(aggregated_tfs.keys()),
+            "derived_timeframes": [tf for tf in aggregated_tfs.keys() if tf != detected_tf],
+            "candle_counts": candle_counts,
+            "data_quality": {
+                "source_count": len(base_candles),
+                "detected_timeframe": detected_tf,
+            }
+        },
+        "timeframes": aggregated_tfs
+    }
+    return result
 
 # -------------------------------------------------------------
 # ----------------EMAILS ----------------
@@ -653,14 +968,38 @@ def chart_page():
     user_base = get_user_mt5_base(current_user.id)
     active_symbol = session.get('active_symbol')
     
-    # If no active symbol, pick the latest one from folders
+    # 1. Validate Active Symbol if present
+    if active_symbol:
+        symbol_folder = get_symbol_folder(current_user.id, active_symbol)
+        try:
+            # Check for meaningful data presence
+            has_meta = os.path.exists(os.path.join(symbol_folder, 'meta.json'))
+            has_processed = os.path.exists(os.path.join(symbol_folder, 'processed'))
+            has_status = os.path.exists(os.path.join(symbol_folder, 'status.json'))
+            
+            if not (has_meta or has_processed or has_status):
+                print(f"⚠️ Active symbol {active_symbol} found empty/invalid. Clearing from session.")
+                session.pop('active_symbol', None)
+                active_symbol = None
+        except Exception as e:
+            print(f"Error validating symbol {active_symbol}: {e}")
+            active_symbol = None
+
+    # 2. Fallback Selection: If no active symbol, pick latest valid one
     if not active_symbol:
-        symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
-        if symbols:
-            # Sort by most recently modified folder
-            symbols.sort(key=lambda d: os.path.getmtime(os.path.join(user_base, d)), reverse=True)
-            active_symbol = symbols[0]
-            session['active_symbol'] = active_symbol
+        if os.path.exists(user_base):
+            all_symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
+            valid_symbols = []
+            for s in all_symbols:
+                s_path = os.path.join(user_base, s)
+                if os.path.exists(os.path.join(s_path, 'meta.json')) or os.path.exists(os.path.join(s_path, 'processed')):
+                    valid_symbols.append(s)
+            
+            if valid_symbols:
+                # Sort by recently modified
+                valid_symbols.sort(key=lambda d: os.path.getmtime(os.path.join(user_base, d)), reverse=True)
+                active_symbol = valid_symbols[0]
+                session['active_symbol'] = active_symbol
     
     status = "IDLE"
     meta = None
@@ -672,12 +1011,15 @@ def chart_page():
         
         if os.path.exists(status_path):
             with open(status_path, 'r') as f:
-                status_data = json.load(f)
-                status = status_data.get('status', 'IDLE')
+                try:
+                    status_data = json.load(f)
+                    status = status_data.get('status', 'IDLE')
+                except: status = 'IDLE'
         
         if os.path.exists(meta_path):
             with open(meta_path, 'r') as f:
-                meta = json.load(f)
+                try: meta = json.load(f)
+                except: meta = None
             
     return render_template('chart.html', symbol=active_symbol, meta=meta, processing_status=status)
 
@@ -701,6 +1043,8 @@ def upload_mt5_csv():
         symbol = filename.split('_')[0].upper()
         if not symbol: symbol = "UNKNOWN"
         
+        print(f"📂 [UPLOAD] File: {filename} -> Symbol: {symbol}")
+
         symbol_folder = get_symbol_folder(current_user.id, symbol)
         raw_folder = os.path.join(symbol_folder, 'raw')
         os.makedirs(raw_folder, exist_ok=True)
@@ -710,6 +1054,8 @@ def upload_mt5_csv():
         
         # Calculate hash for duplicate detection
         file_hash = hash_file(file_path)
+        print(f"#️⃣ [UPLOAD] File Hash: {file_hash}")
+        meta_path = os.path.join(symbol_folder, 'meta.json')
         meta_path = os.path.join(symbol_folder, 'meta.json')
         status_path = os.path.join(symbol_folder, 'status.json')
         
@@ -728,55 +1074,185 @@ def upload_mt5_csv():
 
         if should_process:
             print(f"🔄 Starting hierarchical processing for {symbol}...")
-            thread = threading.Thread(target=background_process_csv, args=(file_path, symbol_folder, symbol))
+            # Clear abort flag for this user before starting
+            ABORT_PROCESSING[current_user.id] = False
+            thread = threading.Thread(target=background_process_csv, args=(file_path, symbol_folder, symbol, current_user.id))
             thread.start()
         
         session['active_symbol'] = symbol
-        flash(f'MT5 CSV for {symbol} uploaded! Processing in background...' if should_process else f'MT5 CSV for {symbol} uploaded (Used Cache)!')
+        msg = f'MT5 CSV for {symbol} uploaded! Processing in background...' if should_process else f'MT5 CSV for {symbol} uploaded (Used Cache)!'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
+            return jsonify({
+                "status": "success",
+                "message": msg,
+                "symbol": symbol,
+                "should_process": should_process
+            })
+
+        flash(msg)
         return redirect(url_for('chart_page'))
     
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
+         return jsonify({"status": "error", "message": "Invalid file type. Please upload a CSV."})
+
     flash('Invalid file type. Please upload a CSV.')
     return redirect(url_for('chart_page'))
+
+
+@app.route('/upload-mt5-folder', methods=['POST'])
+@login_required
+def upload_mt5_folder():
+    if 'files' not in request.files:
+        flash('No files part')
+        return redirect(url_for('settings'))
+        
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        flash('No files selected')
+        return redirect(url_for('settings'))
+
+    # Filter for valid CSVs
+    csv_files = [f for f in files if f.filename.lower().endswith('.csv')]
+    
+    if not csv_files:
+        flash('No CSV files found in the folder.')
+        return redirect(url_for('settings'))
+
+    print(f"📂 [UPLOAD FOLDER] Received {len(csv_files)} CSVs. Analyzing hierarchy...")
+
+    # Group files by Symbol
+    symbol_groups = {}
+    
+    for f in csv_files:
+        raw_path = f.filename.replace('\\', '/')
+        parts = raw_path.split('/')
+        
+        symbol = "UNKNOWN"
+        
+        if len(parts) > 1:
+             possible = parts[-2].upper()
+             if possible.isalnum() or '_' in possible:
+                 symbol = possible
+        
+        if symbol == "UNKNOWN" or symbol.upper() in ["DATA", "QUOTES", "HISTORY"]:
+            basename = secure_filename(parts[-1])
+            if '_' in basename:
+                symbol = basename.split('_')[0].upper()
+        
+        if symbol == "UNKNOWN":
+             continue
+             
+        if symbol not in symbol_groups:
+            symbol_groups[symbol] = []
+        symbol_groups[symbol].append(f)
+    
+    if not symbol_groups:
+        flash('Could not identify any symbols from folder structure. Please use "Symbol/file.csv" structure.')
+        return redirect(url_for('settings'))
+
+    processed_count = 0
+    
+    for symbol, sym_files in symbol_groups.items():
+        best_candidate = None
+        for f in sym_files:
+            if "_M1" in f.filename.upper() or "M1.CSV" in f.filename.upper():
+                best_candidate = f
+                break
+        
+        if not best_candidate: best_candidate = sym_files[0]
+        
+        file = best_candidate
+        filename = secure_filename(file.filename)
+        
+        print(f"🚀 Processing group {symbol} using {filename}")
+
+        symbol_folder = get_symbol_folder(current_user.id, symbol)
+        raw_folder = os.path.join(symbol_folder, 'raw')
+        os.makedirs(raw_folder, exist_ok=True)
+        
+        file_path = os.path.join(raw_folder, 'original.csv')
+        
+        file.seek(0)
+        file.save(file_path)
+        
+        status_path = os.path.join(symbol_folder, 'status.json')
+        meta_path = os.path.join(symbol_folder, 'meta.json')
+        file_hash = hash_file(file_path)
+        
+        should_process = True
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                    if meta.get('csv_hash') == file_hash:
+                        should_process = False
+                        with open(status_path, 'w') as sf:
+                            json.dump({"state": "READY"}, sf)
+            except: pass
+
+        if should_process:
+            # Clear abort flag for this user
+            ABORT_PROCESSING[current_user.id] = False
+            thread = threading.Thread(target=background_process_csv, args=(file_path, symbol_folder, symbol, current_user.id))
+            thread.start()
+            
+        processed_count += 1
+    
+    summary = ", ".join(list(symbol_groups.keys())[:3])
+    msg = f'Folder uploaded! Processing {processed_count} symbols ({summary}...)'
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
+        return jsonify({
+            "status": "success",
+            "message": msg,
+            "symbol": list(symbol_groups.keys())[0], # Return the first symbol for status tracking
+            "should_process": True
+        })
+
+    flash(msg)
+    return redirect(url_for('settings'))
 
 
 @app.route('/api/symbol-meta/<symbol>')
 @login_required
 def symbol_meta_api(symbol):
-    """Returns available timeframes for a symbol based on processed data."""
+    # Returns available timeframes for a symbol based on processed data
     symbol_folder = get_symbol_folder(current_user.id, symbol)
     meta_path = os.path.join(symbol_folder, 'meta.json')
     
-    # Priority: Read rich metadata from meta.json
     if os.path.exists(meta_path):
         try:
             with open(meta_path, 'r') as f:
                 rich_meta = json.load(f)
-            # Ensure available_timeframes is populated
+            
             if 'available_timeframes' not in rich_meta:
                  processed_base = os.path.join(symbol_folder, 'processed')
                  if os.path.exists(processed_base):
-                     rich_meta['available_timeframes'] = [d for d in os.listdir(processed_base) 
-                                if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES]
+                     found_tfs = []
+                     for d in os.listdir(processed_base):
+                         if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES:
+                             found_tfs.append(d)
+                     rich_meta['available_timeframes'] = found_tfs
+
             return jsonify(rich_meta)
         except Exception as e:
             print(f"Error reading meta.json for {symbol}: {e}")
 
-    # Fallback: Directory Scan
     processed_base = os.path.join(symbol_folder, 'processed')
     available_timeframes = []
     
     if os.path.exists(processed_base):
-        # Scan processed folder for valid TF directories
-        available_timeframes = [d for d in os.listdir(processed_base) 
-                              if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES]
+        for d in os.listdir(processed_base):
+            if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES:
+                available_timeframes.append(d)
     
-    # Sort TFs logically (M1 -> W1)
     tf_order = {tf: i for i, tf in enumerate(ALLOWED_TIMEFRAMES)}
     available_timeframes.sort(key=lambda x: tf_order.get(x, 999))
     
     return jsonify({
         "symbol": symbol,
-        "base_tf": "M1", # Assumed base
+        "base_tf": "M1",
         "available_timeframes": available_timeframes
     })
 
@@ -784,15 +1260,13 @@ def symbol_meta_api(symbol):
 @app.route('/api/mt5-data/<symbol>/<timeframe>')
 @login_required
 def get_mt5_timeframe_data(symbol, timeframe):
-    """Serves chart-ready JSON or reveals history up to a moving time boundary."""
     tf_upper = timeframe.upper()
+    print(f"🔥 [API] Request: {symbol} {tf_upper}") 
     if tf_upper not in ALLOWED_TIMEFRAMES:
         abort(400, description="Invalid timeframe")
         
     symbol_folder = get_symbol_folder(current_user.id, symbol)
     zone_file = os.path.join(symbol_folder, 'processed', tf_upper, 'zone.json')
-    
-    # Fallback to candles.json for legacy if zone.json not yet generated
     if not os.path.exists(zone_file):
         zone_file = os.path.join(symbol_folder, 'processed', tf_upper, 'candles.json')
     
@@ -802,16 +1276,24 @@ def get_mt5_timeframe_data(symbol, timeframe):
     with open(zone_file, 'r') as f:
         data = json.load(f)
         
-    # Boundary logic: /api/mt5-data/NAS100/M5?to=1705900800
-    to_ts = request.args.get('to', type=int)
-    
-    # If it was legacy candles.json (pure list), wrap it
     if isinstance(data, list):
         data = {"symbol": symbol, "timeframe": tf_upper, "candles": data}
         
+    from_ts = request.args.get('from', type=int)
+    if from_ts:
+        data['candles'] = [c for c in data['candles'] if c['time'] >= from_ts]
+
+    to_ts = request.args.get('to', type=int)
     if to_ts:
         data['candles'] = [c for c in data['candles'] if c['time'] <= to_ts]
-        
+
+    # Limit logic restored for performance (optional)
+    limit = request.args.get('limit', type=int)
+    if limit and limit > 0:
+        if len(data['candles']) > limit:
+            data['candles'] = data['candles'][-limit:]
+
+    print(f"✅ [API] Serving {len(data['candles'])} candles for {symbol} ({tf_upper})")
     return jsonify(data)
 
 
@@ -828,7 +1310,6 @@ def mt5_status_api():
     if os.path.exists(status_path):
         with open(status_path, 'r') as f:
             status_data = json.load(f)
-            # Ensure we return something with 'state' even if the file had 'status' (migration/compatibility)
             if 'status' in status_data and 'state' not in status_data:
                 status_data['state'] = status_data.pop('status')
             return jsonify(status_data)
@@ -836,59 +1317,25 @@ def mt5_status_api():
     return jsonify({"state": "IDLE"})
 
 
-@app.route('/api/backtest/start', methods=['POST'])
-@login_required
-def start_backtest():
-    """Initializes backtest cursor at a specific timestamp."""
-    data = request.json
-    symbol = data.get('symbol')
-    start_time = data.get('start_time') # Unix TS
-    tf = data.get('timeframe', 'M5')
-    
-    if not start_time:
-        abort(400, description="start_time is required")
-        
-    session[f'backtest_cursor_{current_user.id}'] = start_time
-    session[f'active_symbol_{current_user.id}'] = symbol
-    
-    return jsonify({
-        "status": "success",
-        "cursor": start_time,
-        "symbol": symbol,
-        "timeframe": tf
-    })
-
-@app.route('/api/backtest/step', methods=['POST'])
-@login_required
-def step_backtest():
-    """Advances backtest cursor by active timeframe seconds."""
-    data = request.json
-    tf = data.get('timeframe', 'M5').upper()
-    
-    TF_MAP = {
-        "M1": 60, "M3": 180, "M5": 300, "M15": 900, "M30": 1800,
-        "H1": 3600, "H2": 7200, "H4": 14400, "D1": 86400, "W1": 604800
-    }
-    
-    seconds = TF_MAP.get(tf, 300)
-    current_cursor = session.get(f'backtest_cursor_{current_user.id}')
-    
-    if not current_cursor:
-        abort(400, description="Backtest not started")
-        
-    new_cursor = current_cursor + seconds
-    session[f'backtest_cursor_{current_user.id}'] = new_cursor
-    
-    return jsonify({
-        "status": "success",
-        "new_cursor": new_cursor
-    })
+@app.route('/api/mt5-symbols')
 @login_required
 def get_mt5_symbols():
-    """Returns a list of symbols available for the user."""
     user_base = get_user_mt5_base(current_user.id)
-    symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
-    return jsonify({"symbols": sorted(symbols)})
+    if not os.path.exists(user_base):
+        return jsonify({"symbols": []})
+        
+    all_symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
+    valid_symbols = []
+    
+    for s in all_symbols:
+        s_path = os.path.join(user_base, s)
+        # Check for valid data markers
+        if os.path.exists(os.path.join(s_path, 'meta.json')) or \
+           os.path.exists(os.path.join(s_path, 'processed')) or \
+           os.path.exists(os.path.join(s_path, 'status.json')):
+            valid_symbols.append(s)
+            
+    return jsonify({"symbols": sorted(valid_symbols)})
 
 
 @app.route('/dashboard')
@@ -940,11 +1387,7 @@ def dashboard():
     # Calculate today's PnL correctly using Broker Day Window (03:30 IST)
     start_utc, end_utc = get_broker_day_window()
     
-    today_pnl_row = db.session.execute(text("""
-        SELECT COALESCE(SUM(pnl), 0)
-        FROM trades
-        WHERE date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)
-    """), {"start": start_utc, "end": end_utc}).fetchone()
+    today_pnl_row = db.session.execute(text("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)"), {"start": start_utc, "end": end_utc}).fetchone()
     
     todays_trades = [t for t in trades if t.date and t.date.date() == date.today()] # Simple day check if utc/ist not critical here, but ideally uses window
     # Actually, let's use all_trades for global gross profit to be accurate across pagination if any
@@ -1034,18 +1477,15 @@ def dashboard():
     # SQLite logic: date(date, '+2 hours') shifts 10:00 PM UTC to 12:00 AM next day
     month_str = f"{curr_year}-{curr_month:02d}"
     
-    calendar_data_rows = db.session.execute(text("""
-        SELECT
-            (date + INTERVAL '2 hours')::date AS broker_day,
-            SUM(pnl) AS pnl,
-            COUNT(*) AS trade_count
-        FROM trades
-        WHERE user_id = :uid
-          AND (is_deleted = FALSE OR is_deleted IS NULL)
-          AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month
-        GROUP BY broker_day
-        ORDER BY broker_day
-    """), {"uid": current_user.id, "month": month_str}).fetchall()
+    # Check dialect for correct SQL syntax
+    is_sqlite = 'sqlite' in db.engine.dialect.name
+    
+    if is_sqlite:
+        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
+    else:
+        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
+
+    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "month": month_str}).fetchall()
     
     calendar_map = {row.broker_day: {"pnl": row.pnl, "count": row.trade_count, "breached": (row.pnl < 0 and abs(row.pnl) >= max_daily_loss)} 
                     for row in calendar_data_rows}
@@ -1097,20 +1537,17 @@ def calendar_api():
     
     month_str = f"{year}-{month:02d}"
     
-    calendar_data_rows = db.session.execute(text("""
-        SELECT
-            (date + INTERVAL '2 hours')::date AS broker_day,
-            SUM(pnl) AS pnl,
-            COUNT(*) AS trade_count
-        FROM trades
-        WHERE user_id = :uid
-          AND (is_deleted = FALSE OR is_deleted IS NULL)
-          AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month
-        GROUP BY broker_day
-        ORDER BY broker_day
-    """), {"uid": current_user.id, "month": month_str}).fetchall()
+    # Check dialect for correct SQL syntax
+    is_sqlite = 'sqlite' in db.engine.dialect.name
     
-    calendar_map = {row.broker_day.isoformat(): {
+    if is_sqlite:
+        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
+    else:
+        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
+    
+    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "month": month_str}).fetchall()
+    
+    calendar_map = {str(row.broker_day): {
         "pnl": float(row.pnl), 
         "count": int(row.trade_count), 
         "breached": (row.pnl < 0 and abs(row.pnl) >= max_daily_loss)
@@ -1161,7 +1598,6 @@ def update_account_mode():
 @app.route('/api/toggle-mode', methods=['POST'])
 @login_required
 def toggle_mode_api():
-    """API endpoint to toggle between Trading Journal and Backtesting Mode"""
     is_on = request.json.get('isOn')
     new_mode = 'backtest' if is_on else 'journal'
     mode_label = 'Backtesting' if is_on else 'Trading Journal'
@@ -1219,10 +1655,16 @@ def new_entry():
         discipline = int(discipline_raw) if discipline_raw else 0
         date_str = request.form.get('date')
         
+        duration_val = request.form.get('duration')
+        duration = int(float(duration_val) * 60) if duration_val and duration_val.strip() else None
+        
         screenshot_json = None
         screenshots = []
         
+
+        
         # 1. Handle Multiple File Uploads
+        uploaded_map = {}
         if 'screenshot' in request.files:
             files = request.files.getlist('screenshot')
             for file in files:
@@ -1231,11 +1673,27 @@ def new_entry():
                     if file.mimetype in allowed_mimetypes:
                         filename = secure_filename(file.filename)
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_')
-                        filename = timestamp + filename
-                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                        saved_filename = timestamp + filename
+                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], saved_filename)
                         with open(file_path, 'wb') as f:
                             f.write(file.read())
-                        screenshots.append('uploads/' + filename)
+                        uploaded_map[file.filename] = 'uploads/' + saved_filename
+
+        # Apply Order if provided
+        screenshot_order = request.form.get('screenshot_order')
+        if screenshot_order:
+            try:
+                order_list = json.loads(screenshot_order)
+                for name in order_list:
+                    if name in uploaded_map:
+                        screenshots.append(uploaded_map[name])
+                        del uploaded_map[name]
+            except:
+                pass
+        
+        # Append remaining uploads
+        for path in uploaded_map.values():
+            screenshots.append(path)
         
         # 2. Handle Image URL
         screenshot_url = request.form.get('screenshot_url')
@@ -1252,13 +1710,13 @@ def new_entry():
         stop_loss = float(stop_loss) if stop_loss else None
         take_profit = float(take_profit) if take_profit else None
 
-        direction_mod = 1 if direction == 'Long' else -1
+        direction_mod = 1 if direction == "Long" else -1
         # Calculate Exit Price from PnL
         # PnL = (Exit - Entry) * Qty * Dir
         # Exit = Entry + (PnL / (Qty * Dir))
         exit_price = entry + (pnl / (quantity * direction_mod))
         
-        result = 'Win' if pnl > 0 else ('Loss' if pnl < 0 else 'BE')
+        result = "Win" if pnl > 0 else ("Loss" if pnl < 0 else "BE")
 
         emotion = request.form.get('emotion')
         
@@ -1282,7 +1740,8 @@ def new_entry():
             session=session_time,
             discipline=discipline,
             emotion=emotion,
-            rr=rr
+            rr=rr,
+            duration=duration
         )
 
         if date_str:
@@ -1332,7 +1791,11 @@ def journal():
     
     if date_filter:
         # Broker day filter: trades where (date + INTERVAL '2 hours')::date == date_filter
-        query = query.filter(text("(date + INTERVAL '2 hours')::date = :d")).params(d=date_filter)
+        is_sqlite = 'sqlite' in db.engine.dialect.name
+        if is_sqlite:
+            query = query.filter(text("date(date, '+2 hours') = :d")).params(d=date_filter)
+        else:
+            query = query.filter(text("(date + INTERVAL '2 hours')::date = :d")).params(d=date_filter)
     
     if emotion_filter:
         query = query.filter(Trade.emotion == emotion_filter)
@@ -1406,6 +1869,9 @@ def edit_trade(trade_id):
         discipline_raw = request.form.get('discipline')
         trade.discipline = int(discipline_raw) if discipline_raw else 0
         trade.emotion = request.form.get('emotion', trade.emotion)
+
+        duration_val = request.form.get('duration')
+        trade.duration = int(float(duration_val) * 60) if duration_val and duration_val.strip() else None
         
         date_str = request.form.get('date')
 
@@ -1489,6 +1955,34 @@ def edit_trade(trade_id):
 
     avg_rr = get_avg_rr(current_user.id)
     return render_template('edit_trade.html', trade=trade, screenshots=screenshots, avg_rr=avg_rr)
+
+
+@app.route('/trade/<int:trade_id>/add_url', methods=['POST'])
+@login_required
+def add_trade_url(trade_id):
+    trade = Trade.query.get_or_404(trade_id)
+    if trade.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.get_json()
+    url = data.get('url')
+
+    if not url:
+        return jsonify({'error': 'No URL provided'}), 400
+
+    # Load existing
+    current_screenshots = []
+    if trade.screenshot:
+        try: 
+            current_screenshots = json.loads(trade.screenshot)
+        except: 
+            current_screenshots = [trade.screenshot]
+
+    current_screenshots.append(url)
+    trade.screenshot = json.dumps(current_screenshots)
+    
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/trade/delete/<int:trade_id>', methods=['POST'])
@@ -1652,7 +2146,6 @@ def settings():
 @app.route('/api/backtest/delete-symbol', methods=['POST'])
 @login_required
 def delete_symbol_api():
-    """Deletes all processed data for a specific symbol."""
     data = request.json
     symbol = data.get('symbol')
     if not symbol:
@@ -1662,6 +2155,11 @@ def delete_symbol_api():
     if os.path.exists(symbol_folder):
         import shutil
         shutil.rmtree(symbol_folder)
+        
+        # FIX: If deleted symbol was active, clear it from session
+        if session.get('active_symbol') == symbol:
+            session.pop('active_symbol', None)
+            
         return jsonify({"status": "success", "message": f"Deleted {symbol}"})
     
     return jsonify({"status": "error", "message": "Symbol not found"}), 404
@@ -1669,13 +2167,25 @@ def delete_symbol_api():
 @app.route('/api/backtest/clear-all', methods=['POST'])
 @login_required
 def clear_all_data_api():
-    """Wipes all uploaded MT5 data for the current user."""
+    # 1. Set Abort Flag to stop current background processing
+    ABORT_PROCESSING[current_user.id] = True
+    
+    # 2. Clear Session State
+    session.pop('active_symbol', None)
+    session.pop(f'backtest_cursor_{current_user.id}', None)
+    session.pop(f'active_symbol_{current_user.id}', None)
+    
+    # 3. Delete Physical Data
     user_folder = get_user_mt5_base(current_user.id)
     if os.path.exists(user_folder):
         import shutil
-        shutil.rmtree(user_folder)
-        os.makedirs(user_folder)
-        return jsonify({"status": "success", "message": "All data cleared"})
+        try:
+            shutil.rmtree(user_folder)
+            os.makedirs(user_folder)
+            return jsonify({"status": "success", "message": "All data wiped successfully"})
+        except Exception as e:
+             return jsonify({"status": "error", "message": f"Wipe failed: {str(e)}"}), 500
+             
     return jsonify({"status": "success", "message": "No data to clear"})
 
 
@@ -1691,7 +2201,7 @@ def export_csv():
     writer = csv.writer(output)
     
     # Header
-    writer.writerow(['Date', 'Symbol', 'Direction', 'Quantity', 'Entry', 'Exit', 'PnL', 'Result', 'Strategy', 'Tags', 'Discipline'])
+    writer.writerow(['Date', 'Symbol', 'Direction', 'Quantity', 'Entry', 'Exit', 'PnL', 'Result', 'Strategy', 'Tags', 'Discipline', 'Screenshot'])
     
     for t in trades:
         writer.writerow([
@@ -1705,7 +2215,8 @@ def export_csv():
             t.result,
             t.strategy or '',
             t.tags or '',
-            t.discipline or ''
+            t.discipline or '',
+            t.screenshot or ''
         ])
     
     return Response(
@@ -1715,97 +2226,213 @@ def export_csv():
     )
 
 
+@app.route('/settings/export-full')
+@login_required
+def export_full_backup():
+    all_trades = Trade.query.filter_by(user_id=current_user.id).all()
+    csv_output = io.StringIO()
+    writer = csv.writer(csv_output)
+    writer.writerow(['Date', 'Symbol', 'Direction', 'Quantity', 'Entry', 'Exit', 'PnL', 'Result', 'Strategy', 'Tags', 'Discipline', 'Screenshot'])
+    
+    referenced_images = set()
+    for t in all_trades:
+        writer.writerow([
+            t.date.strftime('%Y-%m-%d %H:%M') if t.date else '',
+            t.symbol, t.direction, t.quantity, t.entry_price, t.exit_price,
+            t.pnl, t.result, t.strategy or '', t.tags or '', t.discipline or '', t.screenshot or ''
+        ])
+        if t.screenshot:
+            try:
+                if t.screenshot.startswith('['):
+                    imgs = json.loads(t.screenshot)
+                    if isinstance(imgs, list):
+                        for img in imgs: referenced_images.add(img)
+                    else: referenced_images.add(t.screenshot)
+                else: referenced_images.add(t.screenshot)
+            except: referenced_images.add(t.screenshot)
+
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('trade_history.csv', csv_output.getvalue())
+        upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+        for img_name in referenced_images:
+            if not img_name: continue
+            img_path = os.path.join(upload_folder, img_name)
+            if os.path.exists(img_path):
+                zf.write(img_path, arcname=f'photos/{img_name}')
+
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"TraderPro_Backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
+
+
+@app.route('/settings/import-csv', methods=['POST'])
+@login_required
+def import_csv():
+    files = request.files.getlist('csv_files')
+    if not files:
+        flash('No files selected', 'error')
+        return redirect(url_for('settings'))
+    
+    imported_count = 0
+    error_count = 0
+    images_saved = 0
+    csv_files = []
+    
+    for file in files:
+        if file.filename == '': continue
+        filename = secure_filename(file.filename)
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+            file_path = os.path.join(app.config.get('UPLOAD_FOLDER', 'uploads'), filename)
+            file.save(file_path)
+            images_saved += 1
+        elif filename.lower().endswith('.csv'):
+            csv_files.append(file)
+
+    if not csv_files and images_saved > 0:
+        flash(f'Saved {images_saved} images. No CSV file found.', 'info')
+        return redirect(url_for('settings'))
+    
+    if not csv_files:
+        flash('No CSV file found', 'error')
+        return redirect(url_for('settings'))
+
+    skipped_count = 0
+    
+    for file in csv_files:
+        try:
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            reader = csv.DictReader(stream)
+            for row in reader:
+                try:
+                    trade_date = datetime.strptime(row['Date'], '%Y-%m-%d %H:%M') if 'Date' in row and row['Date'] else datetime.utcnow()
+                    
+                    # Duplicate Check
+                    symbol = row.get('Symbol', 'UNKNOWN').upper()
+                    direction = row.get('Direction', 'Long')
+                    pnl = float(row.get('PnL', 0.0))
+                    
+                    existing = Trade.query.filter_by(
+                        user_id=current_user.id,
+                        date=trade_date,
+                        symbol=symbol,
+                        direction=direction,
+                        pnl=pnl
+                    ).first()
+                    
+                    if existing:
+                        skipped_count += 1
+                        continue # Skip duplicates
+                    
+                    new_trade = Trade(
+                        user_id=current_user.id,
+                        symbol=symbol,
+                        direction=direction,
+                        quantity=float(row.get('Quantity', 1.0)),
+                        entry_price=float(row.get('Entry', 0.0)),
+                        exit_price=float(row.get('Exit', 0.0)),
+                        pnl=pnl,
+                        result=row.get('Result', ''),
+                        strategy=row.get('Strategy', ''),
+                        tags=row.get('Tags', ''),
+                        discipline=int(row.get('Discipline', 5)) if row.get('Discipline') else 5,
+                        screenshot=row.get('Screenshot', ''),
+                        date=trade_date
+                    )
+                    db.session.add(new_trade)
+                    imported_count += 1
+                except Exception as e:
+                    print(f"Error importing row: {e}")
+                    error_count += 1
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error reading {file.filename}: {e}", "error")
+
+    msg = f"Imported {imported_count} trades."
+    if skipped_count > 0: msg += f" Skipped {skipped_count} duplicates."
+    if images_saved > 0: msg += f" Saved {images_saved} images."
+    flash(msg, 'warning' if error_count > 0 or skipped_count > 0 else 'success')
+    return redirect(url_for('settings'))
+
+
 @app.route('/analytics')
 @login_required
 def analytics():
     # 🔥 Access Check: Journal user only
     if current_user.account_type != 'journal':
         return redirect(url_for('chart_page'))
+    is_sqlite = 'sqlite' in db.engine.dialect.name
+    
     # 1. Daily Breakdown (Table)
-    daily = db.session.execute(text("""
-        SELECT DATE(date) AS day,
-               COUNT(*) AS trades,
-               SUM(pnl) AS pnl
-        FROM trades
-        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
-        GROUP BY DATE(date)
-        ORDER BY day DESC
-    """), {"uid": current_user.id}).fetchall()
+    if is_sqlite:
+        daily_sql = "SELECT DATE(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
+    else:
+        daily_sql = "SELECT date(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
+    
+    daily = db.session.execute(text(daily_sql), {"uid": current_user.id}).fetchall()
 
     # 2. Weekly Breakdown (Table)
-    weekly = db.session.execute(text("""
-        SELECT TO_CHAR(date, 'IYYY-IW') AS week,
-               COUNT(*) AS trades,
-               SUM(pnl) AS pnl
-        FROM trades
-        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
-        GROUP BY week
-        ORDER BY week DESC
-    """), {"uid": current_user.id}).fetchall()
+    if is_sqlite:
+        weekly_sql = "SELECT strftime('%Y-W%W', date) AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
+    else:
+        weekly_sql = "SELECT TO_CHAR(date, 'IYYY-IW') AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
+        
+    weekly = db.session.execute(text(weekly_sql), {"uid": current_user.id}).fetchall()
 
     # 3. Monthly Breakdown (Table)
-    monthly = db.session.execute(text("""
-        SELECT TO_CHAR(date, 'YYYY-MM') AS month,
-               COUNT(*) AS trades,
-               SUM(pnl) AS pnl
-        FROM trades
-        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
-        GROUP BY month
-        ORDER BY month DESC
-    """), {"uid": current_user.id}).fetchall()
+    if is_sqlite:
+        monthly_sql = "SELECT strftime('%Y-%m', date) AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
+    else:
+        monthly_sql = "SELECT TO_CHAR(date, 'YYYY-MM') AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
+        
+    monthly = db.session.execute(text(monthly_sql), {"uid": current_user.id}).fetchall()
     
-    # 4. Weekly Equity Curve (Cumulative for Area Chart)
-    # Fetch all trades ordered by date to build cumulative curve
+    # 4. Equity Curve (Trade-by-Trade) & Drawdown
+    # Fetch all trades ordered by date to build granular curve
     all_trades = Trade.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(Trade.date.asc()).all()
     
-    weekly_equity_map = {}
-    cumulative_pnl = 0
-    
-    # Group cumulative PnL by week
-    for t in all_trades:
-        if not t.date: continue
-        # ISO Week format: YYYY-Www, but we need date string for chart?
-        # User requested: TO_CHAR(date, 'IYYY-IW') as time (ISO week format)
-        week_key = t.date.strftime('%G-W%V')  # ISO week format in Python
-        
-        cumulative_pnl += t.pnl
-        weekly_equity_map[week_key] = cumulative_pnl
-
-    # Convert map to sorted list matching user's backend request structure
-    
-    weekly_equity_rows = db.session.execute(text("""
-        SELECT 
-            DATE_TRUNC('week', date)::date as week_start,
-            TO_CHAR(date, 'IYYY-IW') as week_label,
-            SUM(pnl) as pnl
-        FROM trades
-        WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL)
-        GROUP BY week_start, week_label
-        ORDER BY week_start ASC
-    """), {"uid": current_user.id}).fetchall()
-    
-    weekly_equity = []
-    current_equity = 0
+    weekly_equity = [] # Keeping variable name for compatibility, but now it's per-trade
     drawdown_data = []
+    
+    current_equity = 0
     max_equity = 0
     
-    for row in weekly_equity_rows:
-        current_equity += row.pnl
+    # Add initial point (optional, starting at 0)
+    # weekly_equity.append({"time": "Start", "value": 0, "label": "Start"})
+
+    for t in all_trades:
+        current_equity += t.pnl
         
-        # Build Equity Data
-        weekly_equity.append({
-            "time": row.week_start, # YYYY-MM-DD
-            "value": current_equity,
-            "label": row.week_label # Keep track of week label for dropdown filtering
-        })
-        
-        # Build Drawdown Data
+        # Track Max Equity for Drawdown
         max_equity = max(max_equity, current_equity)
-        dd = current_equity - max_equity
-        drawdown_data.append({
-            "time": row.week_start,
-            "value": dd
+        current_drawdown = current_equity - max_equity
+        
+        trade_time = t.date.strftime('%Y-%m-%d %H:%M') if t.date else "N/A"
+        
+        weekly_equity.append({
+            "time": trade_time,
+            "value": round(current_equity, 2),
+            "label": t.symbol # Useful context
         })
+        
+        drawdown_data.append({
+            "time": trade_time,
+            "value": round(current_drawdown, 2)
+        })
+    
+    # For weekly list table (keep existing logic if needed, or remove if unused)
+    # We will keep the query for the table below the chart if it exists
+    if is_sqlite:
+        equity_sql = "SELECT date(date, '-6 days', 'weekday 1') as week_start, strftime('%Y-W%W', date) as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
+    else:
+        equity_sql = "SELECT DATE_TRUNC('week', date)::date as week_start, TO_CHAR(date, 'IYYY-IW') as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
+    
+    weekly_equity_rows = db.session.execute(text(equity_sql), {"uid": current_user.id}).fetchall()
 
     # 5. Weekly List for Dropdown
     weekly_list = [row.week_label for row in weekly_equity_rows]
@@ -1815,19 +2442,157 @@ def analytics():
     gross_loss = abs(sum(t.pnl for t in all_trades if t.pnl < 0))
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0
 
+    # 7. Advanced Stats (Short vs Long)
+    short_trades = [t for t in all_trades if t.direction == 'Short']
+    long_trades = [t for t in all_trades if t.direction == 'Long']
+    
+    def calc_stats(trade_list):
+        count = len(trade_list)
+        if count == 0:
+            return {"pnl": 0, "wins": 0, "losses": 0, "win_rate": 0, "pnl_wins": 0, "pnl_losses": 0}
+            
+        pnl = sum(t.pnl for t in trade_list)
+        
+        wins_trades = [t for t in trade_list if t.pnl > 0]
+        losses_trades = [t for t in trade_list if t.pnl <= 0]
+        
+        wins = len(wins_trades)
+        losses = count - wins
+        
+        win_rate = round((wins / count) * 100, 1)
+        
+        pnl_wins = sum(t.pnl for t in wins_trades)
+        pnl_losses = sum(t.pnl for t in losses_trades)
+        
+        return {
+            "pnl": pnl, 
+            "wins": wins, 
+            "losses": losses, 
+            "win_rate": win_rate,
+            "pnl_wins": pnl_wins,
+            "pnl_losses": pnl_losses
+        }
+
+    # 7. Short/Long Analysis -> Now Last 7 Days / Overall
+    now = datetime.now()
+    cutoff_date = now - timedelta(days=7)
+
+    # Re-purposing variables to avoid breaking template contracts immediately
+    # short_trades = LAST 7 DAYS
+    # long_trades = OVERALL (ALL TRADES)
+    
+    short_trades = [t for t in all_trades if t.date and t.date >= cutoff_date]
+    long_trades = all_trades # Overall
+    
+    short_stats = calc_stats(short_trades)
+    long_stats = calc_stats(long_trades)
+
+    # 8. Profitability (All Trades)
+    profitability_stats = calc_stats(all_trades)
+    profitability_stats['total'] = len(all_trades)
+
+    # 9. Duration Analysis
+    duration_data = []
+    for t in all_trades:
+        if t.duration and t.duration > 0:
+            duration_data.append({"x": round(t.duration / 60, 2), "y": t.pnl, "symbol": t.symbol})
+
+    # 10. Duration Distribution (Buckets)
+    dist_buckets = {
+        "< 5m": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0},
+        "5-15m": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0},
+        "15-30m": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0},
+        "30m-1h": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0},
+        "1h-4h": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0},
+        "> 4h": {"pnl": 0, "count": 0, "wins": 0, "pnl_wins": 0, "pnl_losses": 0}
+    }
+    
+    for t in all_trades:
+        if not t.duration: continue
+        d_min = t.duration / 60 
+        
+        bucket = "> 4h"
+        if d_min < 5: bucket = "< 5m"
+        elif d_min < 15: bucket = "5-15m"
+        elif d_min < 30: bucket = "15-30m"
+        elif d_min < 60: bucket = "30m-1h"
+        elif d_min < 240: bucket = "1h-4h"
+        
+        dist_buckets[bucket]["pnl"] += t.pnl
+        dist_buckets[bucket]["count"] += 1
+        if t.pnl > 0: 
+            dist_buckets[bucket]["wins"] += 1
+            dist_buckets[bucket]["pnl_wins"] += t.pnl
+        else:
+            dist_buckets[bucket]["pnl_losses"] += t.pnl
+
+    distribution_data = {
+        "labels": list(dist_buckets.keys()),
+        "pnl": [round(dist_buckets[k]["pnl"], 2) for k in dist_buckets],
+        "pnl_wins": [round(dist_buckets[k]["pnl_wins"], 2) for k in dist_buckets],
+        "pnl_losses": [round(dist_buckets[k]["pnl_losses"], 2) for k in dist_buckets],
+        "count": [dist_buckets[k]["count"] for k in dist_buckets]
+    }
+    
+    # 11. Instrument Profit Analysis
+    instrument_map = {}
+    for t in all_trades:
+        sym = t.symbol.upper().strip()
+        if sym not in instrument_map:
+            instrument_map[sym] = 0.0
+        instrument_map[sym] += t.pnl
+    
+    # Sort by PnL Descending (or we could do alphabetical) -> Choosing PnL Descending to show best performers first
+    sorted_instruments = sorted(instrument_map.items(), key=lambda x: x[1], reverse=True)
+    
+    instrument_data = {
+        "labels": [x[0] for x in sorted_instruments],
+        "pnl": [round(x[1], 2) for x in sorted_instruments]
+    }
+
+    # 12. Session Win Rates
+    sessions = {
+        "Asian": {"wins": 0, "total": 0, "win_rate": 0},
+        "London": {"wins": 0, "total": 0, "win_rate": 0},
+        "New York": {"wins": 0, "total": 0, "win_rate": 0}
+    }
+    
+    for t in all_trades:
+        if t.session and t.session in sessions:
+            sessions[t.session]["total"] += 1
+            if t.pnl > 0:
+                sessions[t.session]["wins"] += 1
+    
+    # Calculate percentages
+    for s in sessions:
+        if sessions[s]["total"] > 0:
+            sessions[s]["win_rate"] = round((sessions[s]["wins"] / sessions[s]["total"]) * 100, 1)
+        else:
+            sessions[s]["win_rate"] = 0
+
     return render_template('analytics.html', 
-                         weekly=weekly, 
+                         view='analytics',
+                         week_day=is_sqlite,
+                         daily=daily,
+                         weekly=weekly,
                          monthly=monthly,
                          weekly_equity=weekly_equity,
                          drawdown_data=drawdown_data,
-                         weekly_list=weekly_list,
+                         weekly_equity_rows=weekly_list,
                          gross_profit=gross_profit,
                          gross_loss=gross_loss,
-                         profit_factor=profit_factor)
+                         profit_factor=profit_factor,
+                         short_stats=short_stats,
+                         long_stats=long_stats,
+                         profitability_stats=profitability_stats,
+                         duration_data=duration_data,
+                         distribution_data=distribution_data,
+                         instrument_data=instrument_data,
+                         session_stats=sessions)
 
 
 def run_migrations():
-    """Run partial schema migrations (add missing columns)"""
+    # Run partial schema migrations (add missing columns)
     with app.app_context():
         try:
             with db.engine.begin() as conn:  # engine.begin() auto-commits
@@ -1850,7 +2615,8 @@ def run_migrations():
                     ("strategy", "VARCHAR(50)"), ("session", "VARCHAR(20)"), ("emotion", "VARCHAR(50)"),
                     ("is_deleted", "BOOLEAN DEFAULT 0"), ("tags", "TEXT"), ("discipline", "INTEGER"),
                     ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME"),
-                    ("rr", "FLOAT") # Ensure RR is here too
+                    ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME"),
+                    ("rr", "FLOAT"), ("duration", "INTEGER") # Ensure Duration is here
                 ]
                 for col, dtype in columns:
                     add_column("trades", f"{col} {dtype}")

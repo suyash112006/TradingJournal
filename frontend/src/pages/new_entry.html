@@ -299,6 +299,12 @@
                 </div>
 
                 <div class="form-group">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Duration
+                        (Minutes)</label>
+                    <input type="number" step="any" name="duration" class="form-input" placeholder="e.g. 45">
+                </div>
+
+                <div class="form-group">
                     <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Direction</label>
                     <div class="relative">
                         <select name="direction" class="form-input h-[48px] appearance-none cursor-pointer">
@@ -312,6 +318,8 @@
                     <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Strategy</label>
                     <input type="text" name="strategy" class="form-input" placeholder="e.g. Breakout">
                 </div>
+
+
 
 
             </div>
@@ -505,44 +513,87 @@
 
             // --- Multi-Image Logic ---
             let draggedItem = null;
+            const dt = new DataTransfer(); // Accumulator for form submission
 
             function handleMultipleFiles(input) {
-                const files = Array.from(input.files);
+                const newFiles = Array.from(input.files);
                 const container = document.getElementById("previewContainer");
 
-                files.forEach((file, index) => {
-                    if (!file.type.startsWith("image/")) return;
+                let updated = false;
+
+                newFiles.forEach((file) => {
+                    // Check for valid types
+                    if (!file.type.startsWith("image/") && file.type !== 'application/pdf' && file.type !== 'video/mp4') return;
+
+                    // Prevent Duplicates by Name
+                    const exists = Array.from(dt.files).some(f => f.name === file.name);
+                    if (exists) return;
+
+                    dt.items.add(file);
+                    updated = true;
+
+                    // Create Preview
+                    const div = document.createElement("div");
+                    div.className = "preview-item";
+                    div.draggable = true;
+                    div.dataset.name = file.name;
+
+                    const img = document.createElement("img");
 
                     const reader = new FileReader();
                     reader.onload = e => {
-                        const div = document.createElement("div");
-                        div.className = "preview-item";
-                        div.draggable = true;
-                        div.dataset.name = file.name;
-
-                        const img = document.createElement("img");
                         img.src = e.target.result;
-                        img.title = "Drag to reorder | Click to enlarge";
-                        img.onclick = () => openFullscreen(e.target.result, img);
-
-                        const removeBtn = document.createElement("div");
-                        removeBtn.className = "remove-btn";
-                        removeBtn.innerHTML = "×";
-                        removeBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            div.remove();
-                            updateOrder();
-                        };
-
-                        div.appendChild(img);
-                        div.appendChild(removeBtn);
-                        container.appendChild(div);
-
-                        setupDragEvents(div);
-                        updateOrder();
                     };
                     reader.readAsDataURL(file);
+
+                    img.title = "Drag to reorder | Click to enlarge";
+                    img.onclick = () => openFullscreen(img.src, img);
+
+                    img.onerror = () => {
+                        img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
+                        img.classList.add('broken-link');
+                        img.dataset.originalSrc = file.name;
+                        img.style.padding = '20px';
+                        img.style.objectFit = 'contain';
+                    };
+
+                    const removeBtn = document.createElement("div");
+                    removeBtn.className = "remove-btn";
+                    removeBtn.innerHTML = "×";
+                    removeBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        // Remove from DataTransfer
+                        removeFileFromDt(file.name);
+                        div.remove();
+                        updateOrder();
+                    };
+
+                    div.appendChild(img);
+                    div.appendChild(removeBtn);
+                    container.appendChild(div);
+
+                    setupDragEvents(div);
                 });
+
+                if (updated) {
+                    input.files = dt.files;
+                    updateOrder();
+                }
+            }
+
+            function removeFileFromDt(name) {
+                const newDt = new DataTransfer();
+                Array.from(dt.files).forEach(file => {
+                    if (file.name !== name) {
+                        newDt.items.add(file);
+                    }
+                });
+                dt.items.clear();
+                Array.from(newDt.files).forEach(f => dt.items.add(f));
+
+                // Sync to input
+                const input = document.getElementById("screenshotFile");
+                if (input) input.files = dt.files;
             }
 
             function setupDragEvents(item) {

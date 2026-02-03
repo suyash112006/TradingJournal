@@ -65,6 +65,7 @@ class Trade(db.Model):
     tags = db.Column(db.Text)
     discipline = db.Column(db.Integer)
     rr = db.Column(db.Float)
+    duration = db.Column(db.Integer) # Duration in seconds
     
     # New SaaS Fields
     emotion = db.Column(db.String(50))

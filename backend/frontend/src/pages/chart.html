@@ -505,6 +505,126 @@
     body.is-chart-fullscreen .price-label {
         color: #ffffff !important;
     }
+
+    /* Symbol Switcher Styles */
+    .symbol-switch-container {
+        position: relative;
+        display: inline-block;
+        margin-right: 8px;
+    }
+
+    .symbol-btn {
+        background: rgba(37, 99, 235, 0.1) !important;
+        border: 1px solid rgba(37, 99, 235, 0.4) !important;
+        color: #60a5fa !important;
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 700;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 120px;
+        justify-content: space-between;
+    }
+
+    .symbol-btn:hover {
+        background: rgba(37, 99, 235, 0.2) !important;
+        border-color: rgba(37, 99, 235, 0.6) !important;
+    }
+
+    .symbol-dropdown {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        background: #0b0f14;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        min-width: 200px;
+        max-height: 400px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        display: none;
+        backdrop-filter: blur(20px);
+    }
+
+    .symbol-dropdown.show {
+        display: block;
+        animation: slideIn 0.2s ease-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .symbol-item {
+        padding: 10px 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .symbol-item:last-child {
+        border-bottom: none;
+    }
+
+    .symbol-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .symbol-item.active {
+        background: rgba(37, 99, 235, 0.15);
+    }
+
+    .symbol-item-name {
+        color: #fff;
+        font-weight: 600;
+        font-size: 13px;
+    }
+
+    .symbol-item-meta {
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 10px;
+        text-transform: uppercase;
+        margin-top: 2px;
+    }
+
+    .symbol-search {
+        padding: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        position: sticky;
+        top: 0;
+        background: #0b0f14;
+        z-index: 10;
+    }
+
+    .symbol-search input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: #fff;
+        font-size: 12px;
+        outline: none;
+    }
+
+    .symbol-search input:focus {
+        border-color: rgba(37, 99, 235, 0.5);
+    }
 </style>
 {% endblock %}
 
@@ -518,6 +638,23 @@
     <!-- Candlestick Chart -->
     <div class="chart-container">
         <div class="chart-controls">
+            <!-- Symbol Switcher -->
+            <div class="symbol-switch-container">
+                <button class="symbol-btn" id="symbolBtn" onclick="toggleSymbolDropdown()">
+                    <span id="activeSymbolText">Select Symbol</span>
+                    <span>▼</span>
+                </button>
+                <div class="symbol-dropdown" id="symbolDropdown">
+                    <div class="symbol-search">
+                        <input type="text" placeholder="Search symbol..." onkeyup="filterSymbols(this.value)">
+                    </div>
+                    <div id="symbolListContainer">
+                        <!-- Symbols populated by JS -->
+                        <div class="p-4 text-center text-gray-500 text-xs italic">Loading symbols...</div>
+                    </div>
+                </div>
+            </div>
+
             <button class="chart-btn" data-timeframe="M1" onclick="switchTimeframe('M1')">1m</button>
             <button class="chart-btn" data-timeframe="M3" onclick="switchTimeframe('M3')">3m</button>
             <button class="chart-btn" data-timeframe="M5" onclick="switchTimeframe('M5')">5m</button>
@@ -613,6 +750,99 @@
     let activeSymbol = '{{ symbol }}';
     let AVAILABLE_TFS = []; // Loaded from backend
     let cursorTime = null; // Master Backtest Clock
+    let SYMBOLS_CACHE = []; // List of all valid symbols
+
+    // --- SYMBOL SWITCHER LOGIC ---
+
+    window.toggleSymbolDropdown = () => {
+        const dropdown = document.getElementById('symbolDropdown');
+        dropdown.classList.toggle('show');
+        if (dropdown.classList.contains('show')) {
+            loadSymbolList();
+            dropdown.querySelector('input').focus();
+        }
+    };
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+        const container = document.querySelector('.symbol-switch-container');
+        const dropdown = document.getElementById('symbolDropdown');
+        if (container && !container.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    async function loadSymbolList() {
+        try {
+            const res = await fetch('/api/mt5-symbols');
+            const data = await res.json();
+            SYMBOLS_CACHE = data.symbols || [];
+            renderSymbolList(SYMBOLS_CACHE);
+        } catch (e) {
+            console.error('Failed to load symbols:', e);
+        }
+    }
+
+    function renderSymbolList(symbols) {
+        const container = document.getElementById('symbolListContainer');
+        container.innerHTML = '';
+
+        if (symbols.length === 0) {
+            container.innerHTML = '<div class="p-4 text-center text-gray-500 text-xs italic">No symbols found. Upload a CSV in settings.</div>';
+            return;
+        }
+
+        symbols.forEach(sym => {
+            const item = document.createElement('div');
+            item.className = `symbol-item ${sym === activeSymbol ? 'active' : ''}`;
+            item.onclick = () => switchSymbol(sym);
+
+            const name = document.createElement('span');
+            name.className = 'symbol-item-name';
+            name.textContent = sym;
+
+            // Meta info (e.g. from backend if we had more info, for now just placeholder)
+            const meta = document.createElement('span');
+            meta.className = 'symbol-item-meta';
+            meta.textContent = 'MT5 CSV DATA';
+
+            item.appendChild(name);
+            item.appendChild(meta);
+            container.appendChild(item);
+        });
+    }
+
+    window.filterSymbols = (query) => {
+        const filtered = SYMBOLS_CACHE.filter(s => s.toLowerCase().includes(query.toLowerCase()));
+        renderSymbolList(filtered);
+    };
+
+    window.switchSymbol = async (symbol) => {
+        if (symbol === activeSymbol && uploadedData) {
+            document.getElementById('symbolDropdown').classList.remove('show');
+            return;
+        }
+
+        console.log(`🚀 SWITCHING SYMBOL: ${activeSymbol} -> ${symbol}`);
+        activeSymbol = symbol;
+        document.getElementById('activeSymbolText').textContent = symbol;
+        document.getElementById('symbolDropdown').classList.remove('show');
+
+        // Reset chart loading state (without wiping UI yet)
+        const statusEl = document.getElementById('uploadStatus');
+        if (statusEl) statusEl.textContent = `⏳ Loading ${symbol}...`;
+
+        // 1. Fetch metadata for this symbol
+        const meta = await loadSymbolMeta(symbol);
+        AVAILABLE_TFS = meta.available_timeframes || [];
+        applyTFAvailability(symbol);
+
+        // 2. Clear visual replay state
+        pauseReplay();
+
+        // 3. Load data for the CURRENT timeframe but for NEW symbol
+        loadTimeframeData(symbol, currentTimeframe);
+    };
 
     // --- PERFORMANCE OPTIMIZATION SYSTEM (TradingView Grade) ---
     const MAX_RENDER = 5000;
@@ -1088,19 +1318,12 @@
 
         console.log('🔄 TF SWITCH:', currentTimeframe, '→', tf);
 
-        // FIX 2: HARD RESET ON TF SWITCH
-        // Kill everything BEFORE loading to prevent overlap freeze
+        // PAUSE Replay but don't kill active state if we want to preserve it
         pauseReplay();
-        replay.active = false;
+        // replay.active = false; // Keep active to allow preservation
 
-        if (chart) {
-            chart.timeScale().resetTimeScale();
-        }
-
-        // Clear data instantly to prevent memory spike/flicker
-        if (candleSeries) {
-            candleSeries.setData([]);
-        }
+        // DO NOT resetTimeScale() here - let loadTimeframeData handle it smoothly
+        // DO NOT clear data - let the new data replace it to avoid flicker
 
         // 1. Capture View Range (Only for metadata, reset handled load-side)
         const viewRange = chart ? chart.timeScale().getVisibleRange() : null;
@@ -1164,7 +1387,7 @@
                 // FIX 3: TWO-STAGE LOAD (NO FREEZE GUARANTEE)
                 // Stage 1: Instant preview (fast)
                 const previewSlice = uploadedData.slice(-PREVIEW_COUNT);
-                safeRender(candleSeries, previewSlice, true);
+                safeRender(candleSeries, previewSlice); // ❌ Removed autoScroll to prevent jump to latest
 
                 // Stage 2: Full windowed render (async/deferred)
                 setTimeout(() => {
@@ -1187,11 +1410,9 @@
                     if (preservedRange) {
                         chart.timeScale().setVisibleRange(preservedRange);
                     } else {
-                        candleSeries.priceScale().applyOptions({ autoScale: true });
-                        chart.timeScale().scrollToRealTime(); // FIX 5: Use scrollToRealTime (fast)
-
+                        // ❌ scrollToRealTime removed to satisfy Safe Render Rule
                         chart.timeScale().applyOptions({
-                            rightOffset: 20,
+                            rightOffset: 12,
                             barSpacing: 10
                         });
                     }
@@ -1691,7 +1912,8 @@
                 secondsVisible: false,
                 borderColor: 'rgba(255, 255, 255, 0.2)', // Increased visibility
                 borderVisible: true,
-                shiftVisibleRangeOnNewBar: true,
+                shiftVisibleRangeOnNewBar: false, // ❌ Prevent auto-scroll logic
+                rightOffset: 12, // 🎯 TradingView style: add spacing on right edge
             },
             grid: {
                 vertLines: { color: 'rgba(0, 0, 0, 0)' },
@@ -1791,8 +2013,8 @@
             borderDownColor: '#ff4444',
             wickUpColor: '#00ff99',
             wickDownColor: '#ff4444',
-            priceLineVisible: true, // RESTORED: User wants it back
-            lastValueVisible: true,
+            priceLineVisible: false,
+            lastValueVisible: false,
             priceLineWidth: 1,
             priceLineColor: '#2563eb',
         });
@@ -1847,8 +2069,8 @@
         }
 
 
-        // Fit content to view
-        chart.timeScale().fitContent();
+        // ❌ fitContent() removed to prevent price line reset
+        // chart.timeScale().fitContent();
 
         // 🔥 enable click on time axis (TradingView style)
         enableTimeAxisClick();
@@ -2093,6 +2315,22 @@
                 console.log('✅ LightweightCharts library loaded');
                 initChart();
                 console.log('Chart initialized:', { chart: !!chart, candleSeries: !!candleSeries });
+
+                // Initialize Symbol Switcher UI
+                if (activeSymbol) {
+                    document.getElementById('activeSymbolText').textContent = activeSymbol;
+                    applyTFAvailability(activeSymbol);
+                } else {
+                    // Try to auto-select first symbol
+                    fetch('/api/mt5-symbols')
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.symbols && data.symbols.length > 0) {
+                                switchSymbol(data.symbols[0]);
+                            }
+                        })
+                        .catch(e => console.warn('No symbols found to auto-select'));
+                }
             }
         }, 100);
 
