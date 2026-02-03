@@ -2567,16 +2567,17 @@ def analytics():
         "pnl": [round(x[1], 2) for x in sorted_instruments]
     }
 
-    # 12. Session Win Rates
+    # 12. Session Win Rates (Updated)
     sessions = {
-        "Asian": {"wins": 0, "total": 0, "win_rate": 0},
-        "London": {"wins": 0, "total": 0, "win_rate": 0},
-        "New York": {"wins": 0, "total": 0, "win_rate": 0}
+        "Asian": {"wins": 0, "total": 0, "win_rate": 0, "pnl": 0.0},
+        "London": {"wins": 0, "total": 0, "win_rate": 0, "pnl": 0.0},
+        "New York": {"wins": 0, "total": 0, "win_rate": 0, "pnl": 0.0}
     }
     
     for t in all_trades:
         if t.session and t.session in sessions:
             sessions[t.session]["total"] += 1
+            sessions[t.session]["pnl"] += (t.pnl or 0.0)
             if t.pnl > 0:
                 sessions[t.session]["wins"] += 1
     
