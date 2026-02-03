@@ -239,10 +239,10 @@
     <div class="analytics-card">
         <div class="flex items-center justify-between mb-6">
             <div class="chart-title text-gray-400">Session Win Rates</div>
-            <div class="flex items-center gap-1 w-32 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                <span class="w-14 text-right">W</span>
+            <div class="flex items-center gap-1 w-32 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <span class="w-14 text-right">Win</span>
                 <span class="opacity-0">/</span>
-                <span class="w-14 text-left">L</span>
+                <span class="w-14 text-left">Loss</span>
             </div>
         </div>
         <div class="space-y-6">
@@ -250,7 +250,7 @@
             <!-- New York -->
             <div class="flex items-center justify-between gap-4">
                 <div class="w-20 text-sm font-bold text-gray-200">New York</div>
-                <div class="flex-1 h-4 rounded-full overflow-hidden relative"
+                <div class="flex-1 h-3 rounded-full overflow-hidden relative"
                     style="background-color: {{ '#ef4444' if session_stats.get('New York', {}).get('total', 0) > 0 else '#1f2937' }};">
                     <!-- Striped background pattern -->
                     <div class="absolute inset-0 opacity-20"
@@ -263,7 +263,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-1 w-32 text-xs font-bold text-gray-200 whitespace-nowrap">
+                <div class="flex items-center gap-1 w-32 text-[10px] font-bold text-gray-200 whitespace-nowrap">
                     <span class="w-14 text-right text-[var(--profit)]">{{ session_stats.get('New York',
                         {}).get('win_rate', 0) }}%</span>
                     <span class="opacity-30">/</span>
@@ -276,7 +276,7 @@
             <!-- London -->
             <div class="flex items-center justify-between gap-4">
                 <div class="w-20 text-sm font-bold text-gray-200">London</div>
-                <div class="flex-1 h-4 rounded-full overflow-hidden relative"
+                <div class="flex-1 h-3 rounded-full overflow-hidden relative"
                     style="background-color: {{ '#ef4444' if session_stats.get('London', {}).get('total', 0) > 0 else '#1f2937' }};">
                     <div class="absolute inset-0 opacity-20"
                         style="background-image: repeating-linear-gradient(45deg, #374151 0, #374151 10px, transparent 10px, transparent 20px);">
@@ -288,7 +288,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-1 w-32 text-xs font-bold text-gray-200 whitespace-nowrap">
+                <div class="flex items-center gap-1 w-32 text-[10px] font-bold text-gray-200 whitespace-nowrap">
                     <span class="w-14 text-right text-[var(--profit)]">{{ session_stats.get('London',
                         {}).get('win_rate', 0) }}%</span>
                     <span class="opacity-30">/</span>
@@ -301,7 +301,7 @@
             <!-- Asia -->
             <div class="flex items-center justify-between gap-4">
                 <div class="w-20 text-sm font-bold text-gray-200">Asia</div>
-                <div class="flex-1 h-4 rounded-full overflow-hidden relative"
+                <div class="flex-1 h-3 rounded-full overflow-hidden relative"
                     style="background-color: {{ '#ef4444' if session_stats.get('Asian', {}).get('total', 0) > 0 else '#1f2937' }};">
                     <div class="absolute inset-0 opacity-20"
                         style="background-image: repeating-linear-gradient(45deg, #374151 0, #374151 10px, transparent 10px, transparent 20px);">
