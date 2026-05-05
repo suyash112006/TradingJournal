@@ -704,7 +704,7 @@ def index():
         except Exception as e:
              # Safety for DB crashes (like "no such table" if create_all failed)
              print(f"❌ DB ERROR IN LOGIN: {e}")
-             flash("Database error. Please check logs.")
+             flash(f"Database error: {str(e)}")
              return redirect(url_for('index'))
 
         print(f"DEBUG LOGIN: Email={email}, Found={bool(user)}")
