@@ -20,27 +20,25 @@ class Config:
         if raw_uri.startswith("postgres://"):
             raw_uri = raw_uri.replace("postgres://", "postgresql://", 1)
         
-        # Handle unencoded '@' in password
-        if raw_uri.count('@') > 1:
-            try:
-                # Find the last @ (separates credentials from host)
-                last_at = raw_uri.rfind('@')
-                # Find the first : after the protocol (starts the password)
-                protocol_end = raw_uri.find('://') + 3
-                first_colon = raw_uri.find(':', protocol_end)
-                
-                if first_colon != -1 and first_colon < last_at:
-                    user_part = raw_uri[:first_colon+1]
-                    pass_part = raw_uri[first_colon+1:last_at]
-                    host_part = raw_uri[last_at:]
-                    
-                    # Encode ONLY the password part
-                    encoded_pass = urllib.parse.quote(pass_part)
-                    raw_uri = f"{user_part}{encoded_pass}{host_part}"
-            except Exception as e:
-                print(f"DEBUG: URI parsing failed: {e}")
-    
+    # Handle unencoded '@' in password
+    if raw_uri and raw_uri.count('@') > 1:
+        try:
+            last_at = raw_uri.rfind('@')
+            protocol_end = raw_uri.find('://') + 3
+            first_colon = raw_uri.find(':', protocol_end)
+            if first_colon != -1 and first_colon < last_at:
+                user_part = raw_uri[:first_colon+1]
+                pass_part = raw_uri[first_colon+1:last_at]
+                host_part = raw_uri[last_at:]
+                import urllib.parse
+                raw_uri = f"{user_part}{urllib.parse.quote(pass_part)}{host_part}"
+        except Exception:
+            pass
+
+    # Fallback logic: If we have a non-pooling URL, we can use it if pooling fails
+    # But for now, let's just make sure we support both.
     SQLALCHEMY_DATABASE_URI = raw_uri
+
     # Print masked URI for debugging in Vercel logs
     _masked = raw_uri.split('@')[-1] if '@' in raw_uri else raw_uri
     print(f"INFO: Database URI Configured: {_masked}")
