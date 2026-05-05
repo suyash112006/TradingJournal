@@ -9,8 +9,27 @@ class Config:
     
     # Render provides 'postgres://' which SQLAlchemy 1.4+ deprecated. We must fix it to 'postgresql://'
     uri = os.environ.get("DATABASE_URL", "sqlite:///trading_journal.db")
+    
+    # Fix 'postgres://' for SQLAlchemy 1.4+
     if uri and uri.startswith("postgres://"):
         uri = uri.replace("postgres://", "postgresql://", 1)
+    
+    # Handle unencoded '@' in password (common mistake)
+    if uri and uri.count('@') > 1:
+        # Find the last @ (which separates credentials from host)
+        last_at_index = uri.rfind('@')
+        # Find the first : after the protocol (which starts the password)
+        first_colon_index = uri.find(':', uri.find('://') + 3)
+        if first_colon_index != -1 and first_colon_index < last_at_index:
+            # Everything between the first colon and the last @ is the password
+            protocol_user = uri[:first_colon_index+1]
+            password = uri[first_colon_index+1:last_at_index]
+            host_suffix = uri[last_at_index:]
+            # Encode only the password part
+            import urllib.parse
+            password = urllib.parse.quote(password)
+            uri = f"{protocol_user}{password}{host_suffix}"
+
     
     # Updated PostgreSQL URL for production fallback if needed
     POSTGRES_FALLBACK = "postgresql://postgresql_tpve_user:NHdE6FK5hGwg5bDR8PDOhqfH9RgkKo2r@dpg-d5rqbc8gjchc739aln70-a.oregon-postgres.render.com/postgresql_tpve"
