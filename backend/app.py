@@ -663,6 +663,9 @@ def db_test():
             "database": masked_uri,
             "using_ssl": "sslmode=require" in uri
         })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/init-db')
 def init_db():
     try:
