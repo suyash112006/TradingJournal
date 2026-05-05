@@ -181,7 +181,7 @@
     </div>
 
     <button type="submit"
-        class="bg-[var(--accent)] hover:bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-900/10">Apply</button>
+        class="bg-[var(--profit)] hover:bg-[#00e68a] text-black px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-[#00ff99]/20">Apply</button>
     <a href="{{ url_for('journal', view=view) }}"
         class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#222] flex items-center transition-all">Reset</a>
 </form>
@@ -303,7 +303,7 @@
         {% for p in range(1, total_pages + 1) %}
         <a href="{{ url_for('journal', view=view, page=p, symbol=request.args.get('symbol'), direction=request.args.get('direction')) }}"
             class="w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all no-underline
-           {{ 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' if p == page else 'border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' }}">
+           {{ 'bg-[var(--profit)] text-black shadow-lg shadow-[#00ff99]/40' if p == page else 'border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' }}">
             {{ p }}
         </a>
         {% endfor %}
