@@ -1,4 +1,10 @@
+import sys
+import os
+# Ensure the current directory is in the path for Vercel
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session, send_file
+
 from sqlalchemy import text, func, inspect
 from functools import wraps
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
