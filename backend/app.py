@@ -40,15 +40,6 @@ app = Flask(__name__,
 app.config.from_object(Config)
 
 
-print(f"DEBUG: app.root_path = {app.root_path}")
-
-from jinja2 import ChoiceLoader, FileSystemLoader
-template_paths = [
-    os.path.join(app.root_path, '../frontend'),
-    os.path.join(app.root_path, '../frontend/src/pages')
-]
-print(f"DEBUG: template_paths = {template_paths}")
-
 app.jinja_loader = ChoiceLoader([
     FileSystemLoader(p) for p in template_paths
 ])
@@ -114,16 +105,15 @@ with app.app_context():
             safe_add_column("trades", "timeframe", "VARCHAR(20)")
 
 
-        # Seed RiskSettings if empty
-        try:
-            if not RiskSettings.query.first():
-                print("Seeding default Risk Settings...")
-                default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
-                db.session.add(default_settings)
-                db.session.commit()
-                print("Database seeded successfully.")
-        except Exception as seed_err:
-            print(f"Warning: Could not seed database: {seed_err}")
+        # Seed RiskSettings if empty (skip on Vercel - tables already initialized)
+        if not os.environ.get("VERCEL"):
+            try:
+                if not RiskSettings.query.first():
+                    default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
+                    db.session.add(default_settings)
+                    db.session.commit()
+            except Exception as seed_err:
+                print(f"Warning: Could not seed database: {seed_err}")
             
     except Exception as e:
         print(f"CRITICAL ERROR: DB Init failed: {e}")

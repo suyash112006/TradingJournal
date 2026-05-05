@@ -9,9 +9,15 @@
   ],
   "routes": [
     {
+      "src": "/static/(.*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf))",
+      "headers": {
+        "Cache-Control": "public, max-age=604800, immutable"
+      },
+      "dest": "index.py"
+    },
+    {
       "src": "/(.*)",
       "dest": "index.py"
     }
   ]
 }
-
