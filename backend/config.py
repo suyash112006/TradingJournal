@@ -37,6 +37,9 @@ class Config:
                 print(f"DEBUG: URI parsing failed: {e}")
     
     SQLALCHEMY_DATABASE_URI = raw_uri
+    # Print masked URI for debugging in Vercel logs
+    _masked = raw_uri.split('@')[-1] if '@' in raw_uri else raw_uri
+    print(f"INFO: Database URI Configured: {_masked}")
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes in seconds
