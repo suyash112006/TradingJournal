@@ -40,6 +40,11 @@ app = Flask(__name__,
 app.config.from_object(Config)
 
 
+from jinja2 import ChoiceLoader, FileSystemLoader
+template_paths = [
+    os.path.join(app.root_path, '../frontend'),
+    os.path.join(app.root_path, '../frontend/src/pages')
+]
 app.jinja_loader = ChoiceLoader([
     FileSystemLoader(p) for p in template_paths
 ])
