@@ -45,9 +45,14 @@ app.jinja_loader = ChoiceLoader([
     FileSystemLoader(p) for p in template_paths
 ])
 
-# Ensure upload folder exists
-if not os.path.exists(app.config.get('UPLOAD_FOLDER', 'uploads')):
-    os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'))
+# Ensure upload folder exists (wrapped for Vercel/Read-only environments)
+try:
+    upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
+except Exception as e:
+    print(f"Warning: Could not create upload folder: {e}")
+
 
 # Cloudinary Configuration
 cloudinary.config(
