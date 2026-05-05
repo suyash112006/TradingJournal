@@ -77,9 +77,16 @@ db.init_app(app)
 bcrypt.init_app(app)
 
 # --- Database Initialization ---
+print("INFO: Starting database initialization check...")
 with app.app_context():
     try:
+        # Check if we have a database URL
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if 'sqlite' in db_uri:
+            print(f"WARNING: Using SQLite in a serverless environment (Vercel). Path: {db_uri}")
+        
         db.create_all()
+        print("INFO: db.create_all() completed.")
         
         # Safe Migration Helper
         def safe_add_column(table_name, column_name, column_type):
@@ -90,9 +97,6 @@ with app.app_context():
                     db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
                     db.session.commit()
                     print(f"Migration Success: Added column {column_name} to {table_name}")
-                else:
-                    # print(f"Info: Migration Skipped (Column {column_name} exists in {table_name})")
-                    pass
             except Exception as e:
                 db.session.rollback()
                 print(f"Warning: Migration Error (Adding {column_name} to {table_name}): {e}")
@@ -104,15 +108,20 @@ with app.app_context():
         safe_add_column("trades", "timeframe", "VARCHAR(20)")
 
         # Seed RiskSettings if empty
-        if not RiskSettings.query.first():
-            print("Seeding default Risk Settings...")
-            default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
-            db.session.add(default_settings)
-            db.session.commit()
-            print("Database initialized successfully.")
+        try:
+            if not RiskSettings.query.first():
+                print("Seeding default Risk Settings...")
+                default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
+                db.session.add(default_settings)
+                db.session.commit()
+                print("Database seeded successfully.")
+        except Exception as seed_err:
+            print(f"Warning: Could not seed database: {seed_err}")
             
     except Exception as e:
-        print(f"Error: DB Init failed: {e}")
+        print(f"CRITICAL ERROR: DB Init failed: {e}")
+        # In serverless, we might want to continue even if DB init fails (e.g. if DB is already up but read-only)
+
 
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
