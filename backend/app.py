@@ -633,6 +633,17 @@ login_attempts = {}
 def ping():
     return "pong", 200
 
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "up",
+        "root_path": app.root_path,
+        "template_paths": [str(p) for p in app.jinja_loader.loaders[0].searchpath] if hasattr(app.jinja_loader, 'loaders') else "ChoiceLoader",
+        "db_uri": app.config.get('SQLALCHEMY_DATABASE_URI', '').split('@')[-1], # Mask password
+        "cwd": os.getcwd()
+    }), 200
+
+
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def index():

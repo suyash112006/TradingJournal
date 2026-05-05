@@ -1,0 +1,14 @@
+flask
+flask-cors
+python-dotenv
+gunicorn
+sqlalchemy
+flask-sqlalchemy
+flask-login
+flask-mail
+itsdangerous
+pytz
+flask-bcrypt
+psycopg2-binary
+cloudinary
+

@@ -1,6 +1,5 @@
 # Ignore user uploads & generated data
 uploads/
-<<<<<<< HEAD
 instance/
 *.csv
 *.json
@@ -11,11 +10,4 @@ node_modules/
 
 # Python cache
 __pycache__/
-=======
-*.csv
-*.json
 
-# Node
-node_modules/
-.env
->>>>>>> 9e8f6ab (Ignore uploads and large generated files)
