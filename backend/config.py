@@ -35,8 +35,12 @@ class Config:
         except Exception:
             pass
 
-    # Fallback logic: If we have a non-pooling URL, we can use it if pooling fails
-    # But for now, let's just make sure we support both.
+    # Strip pgbouncer=true as it's not supported by psycopg2 but often included by Supabase/Prisma
+    if raw_uri and "pgbouncer=true" in raw_uri:
+        raw_uri = raw_uri.replace("pgbouncer=true", "")
+        # Clean up potential double ampersands or trailing question marks
+        raw_uri = raw_uri.replace("&&", "&").replace("?&", "?").rstrip("&? ")
+
     SQLALCHEMY_DATABASE_URI = raw_uri
 
     # Print masked URI for debugging in Vercel logs
