@@ -9,8 +9,11 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key")
     
     # Render/Supabase provides 'postgres://' which SQLAlchemy 1.4+ deprecated. We must fix it to 'postgresql://'
-    # Try DATABASE_URL first, then Vercel's POSTGRES_URL, then fallback to SQLite
-    raw_uri = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "sqlite:///trading_journal.db"
+    # Try various environment variables common in Vercel integrations
+    raw_uri = os.environ.get("DATABASE_URL") or \
+              os.environ.get("STORAGE_URL") or \
+              os.environ.get("POSTGRES_URL") or \
+              "sqlite:///trading_journal.db"
     
     if raw_uri and "://" in raw_uri:
         # Fix protocol
