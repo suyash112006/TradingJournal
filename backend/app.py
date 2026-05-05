@@ -35,8 +35,10 @@ import cloudinary.uploader
 
 # ---------------- APP SETUP ----------------
 app = Flask(__name__, 
-            static_folder='../frontend/src')
+            static_folder='../frontend/src',
+            instance_path='/tmp')
 app.config.from_object(Config)
+
 
 print(f"DEBUG: app.root_path = {app.root_path}")
 

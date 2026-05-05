@@ -26,7 +26,12 @@ class Config:
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "noreply@tradejournal.com")
-    UPLOAD_FOLDER = os.path.join("static", "uploads")
+    # Handle read-only filesystem on Vercel
+    if os.environ.get("VERCEL"):
+        UPLOAD_FOLDER = "/tmp/uploads"
+    else:
+        UPLOAD_FOLDER = os.path.join("static", "uploads")
+
     
     # Cloudinary Configuration
     CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME")
