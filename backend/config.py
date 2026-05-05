@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (override existing to prevent conflicts)
+load_dotenv(override=True)
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key")
@@ -23,3 +27,9 @@ class Config:
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "noreply@tradejournal.com")
     UPLOAD_FOLDER = os.path.join("static", "uploads")
+    
+    # Cloudinary Configuration
+    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY")
+    CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET")
+

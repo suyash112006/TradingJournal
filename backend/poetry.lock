@@ -90,6 +90,18 @@ files = [
 ]
 
 [[package]]
+name = "certifi"
+version = "2026.4.22"
+description = "Python package for providing Mozilla's CA Bundle."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "certifi-2026.4.22-py3-none-any.whl", hash = "sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a"},
+    {file = "certifi-2026.4.22.tar.gz", hash = "sha256:8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580"},
+]
+
+[[package]]
 name = "click"
 version = "8.3.1"
 description = "Composable command line interface toolkit"
@@ -103,6 +115,26 @@ files = [
 
 [package.dependencies]
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
+
+[[package]]
+name = "cloudinary"
+version = "1.44.2"
+description = "Python and Django SDK for Cloudinary"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "cloudinary-1.44.2-py3-none-any.whl", hash = "sha256:6624d06014c33f50c0c9e740fde1dfe4579d03311025d8bb7183824b7443aa09"},
+    {file = "cloudinary-1.44.2.tar.gz", hash = "sha256:bc9139c68f2ef6996ba62a5d0300e63c711d4f6564644c0c82aa31bf641ef3c7"},
+]
+
+[package.dependencies]
+certifi = "*"
+six = "*"
+urllib3 = ">=1.26.5"
+
+[package.extras]
+dev = ["pytest (==4.6) ; python_version < \"3.7\"", "pytest ; python_version >= \"3.7\"", "tox"]
 
 [[package]]
 name = "colorama"
@@ -592,7 +624,10 @@ files = [
 ]
 
 [package.dependencies]
-numpy = {version = ">=1.26.0", markers = "python_version < \"3.14\""}
+numpy = [
+    {version = ">=1.26.0", markers = "python_version < \"3.14\""},
+    {version = ">=2.3.3", markers = "python_version >= \"3.14\""},
+]
 python-dateutil = ">=2.8.2"
 tzdata = {version = "*", markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\""}
 
@@ -877,6 +912,24 @@ files = [
 ]
 
 [[package]]
+name = "urllib3"
+version = "2.6.3"
+description = "HTTP library with thread-safe connection pooling, file post, and more."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4"},
+    {file = "urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed"},
+]
+
+[package.extras]
+brotli = ["brotli (>=1.2.0) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=1.2.0.0) ; platform_python_implementation != \"CPython\""]
+h2 = ["h2 (>=4,<5)"]
+socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
+zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
+
+[[package]]
 name = "werkzeug"
 version = "3.1.5"
 description = "The comprehensive WSGI web application library."
@@ -896,5 +949,5 @@ watchdog = ["watchdog (>=2.3)"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.13,<3.14"
-content-hash = "43b21e3d757b0e663abbec085a19fb425217706e5bd9ec1921ee1a25c339c958"
+python-versions = ">=3.13"
+content-hash = "093e484630a15e6a08f43173efad36c391867cc4ab81a9b9621615167b438c10"

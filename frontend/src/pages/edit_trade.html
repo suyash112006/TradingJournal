@@ -359,10 +359,17 @@
             <div id="previewContainer" class="preview-grid mb-6">
                 {% for src in screenshots %}
                 <div class="preview-item" draggable="true" data-name="{{ src }}">
-                    <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) if 'uploads/' in src else src }}"
-                        data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
-                        onclick="openFullscreen(this.src, this)"
-                        onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
+                    {% if 'http' in src %}
+                        <img src="{{ src }}" 
+                             data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
+                             onclick="openFullscreen(this.src, this)"
+                             onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
+                    {% else %}
+                        <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) }}"
+                             data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
+                             onclick="openFullscreen(this.src, this)"
+                             onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
+                    {% endif %}
                     <div class="remove-btn" onclick="this.parentElement.remove(); updateOrder();">×</div>
                 </div>
                 {% endfor %}
@@ -384,14 +391,14 @@
             <input type="hidden" name="screenshot_order" id="screenshotOrder">
 
             <div class="flex gap-2 mt-6">
-                <input type="text" id="screenshot_url" name="screenshot_url"
+                <input type="text" id="screenshot_url" 
                     class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
-                    placeholder="Or add new image URL">
-                <button type="button"
+                    placeholder="Paste image URL here...">
+                <button type="button" id="addUrlBtn"
                     class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#222] transition-colors"
                     style="white-space: nowrap;"
-                    onclick="const url = document.getElementById('screenshot_url').value; if(url) window.open(url, '_blank'); else alert('Please enter a URL');">
-                    Test
+                    onclick="uploadUrlToCloudinary()">
+                    Add to Cloud
                 </button>
             </div>
         </div>
@@ -425,37 +432,24 @@
 </div>
 
 <script>
+    // --- Rating Stars Logic ---
     const stars = document.querySelectorAll("#disciplineStars span");
     const starsContainer = document.getElementById("disciplineStars");
     const result = document.getElementById("disciplineResult");
     const input = document.getElementById("disciplineInput");
 
     const labels = {
-        1: "Very Poor",
-        2: "Poor",
-        3: "Average",
-        4: "Very Good",
-        5: "Excellent"
+        1: "Very Poor", 2: "Poor", 3: "Average", 4: "Very Good", 5: "Excellent"
     };
-
     const colors = {
-        1: "#ff3d00",
-        2: "#ff9800",
-        3: "#f5c518",
-        4: "#8bc34a",
-        5: "#00e676"
+        1: "#ff3d00", 2: "#ff9800", 3: "#f5c518", 4: "#8bc34a", 5: "#00e676"
     };
 
     function highlightStars(value) {
-        stars.forEach(star => {
-            star.classList.toggle("active", star.dataset.value <= value);
-        });
-        if (starsContainer) {
-            starsContainer.className = "stars level-" + value;
-        }
+        stars.forEach(star => star.classList.toggle("active", star.dataset.value <= value));
+        if (starsContainer) starsContainer.className = "stars level-" + value;
     }
 
-    // Initialize if value exists
     if (input && input.value) {
         highlightStars(input.value);
         result.textContent = labels[input.value];
@@ -463,70 +457,79 @@
     }
 
     stars.forEach(star => {
-        star.addEventListener("mouseover", () => {
-            highlightStars(star.dataset.value);
-        });
-
-        star.addEventListener("mouseout", () => {
-            highlightStars(input.value || 0);
-        });
-
+        star.addEventListener("mouseover", () => highlightStars(star.dataset.value));
+        star.addEventListener("mouseout", () => highlightStars(input.value || 0));
         star.addEventListener("click", () => {
-            const value = star.dataset.value;
-            input.value = value;
-            highlightStars(value);
-            result.textContent = labels[value];
-            result.style.color = colors[value];
+            const val = star.dataset.value;
+            input.value = val;
+            highlightStars(val);
+            result.textContent = labels[val];
+            result.style.color = colors[val];
         });
     });
 
-    // --- Multi-Image Logic ---
+    // --- Multi-Image & Cloudinary Logic ---
     let draggedItem = null;
+
+    function openFullscreen(src, imgElement) {
+        const modal = document.createElement("div");
+        modal.className = "fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in";
+        modal.onclick = () => modal.remove();
+
+        const img = document.createElement("img");
+        img.src = src;
+        img.className = "max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-zoom-in";
+        
+        modal.appendChild(img);
+        document.body.appendChild(modal);
+    }
 
     function handleMultipleFiles(input) {
         const files = Array.from(input.files);
         const container = document.getElementById("previewContainer");
 
-        files.forEach((file, index) => {
+        files.forEach(file => {
             if (!file.type.startsWith("image/")) return;
-
             const reader = new FileReader();
             reader.onload = e => {
-                const div = document.createElement("div");
-                div.className = "preview-item";
-                div.draggable = true;
-                div.dataset.name = file.name;
-
-                const img = document.createElement("img");
-                img.src = e.target.result;
-                img.title = "Drag to reorder | Click to enlarge";
-                img.onclick = () => openFullscreen(e.target.result, img);
-                img.onerror = () => {
-                    img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
-                    img.classList.add('broken-link');
-                    img.dataset.originalSrc = file.name; // Fallback
-                    img.style.padding = '20px';
-                    img.style.objectFit = 'contain';
-                };
-
-                const removeBtn = document.createElement("div");
-                removeBtn.className = "remove-btn";
-                removeBtn.innerHTML = "×";
-                removeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    div.remove();
-                    updateOrder();
-                };
-
-                div.appendChild(img);
-                div.appendChild(removeBtn);
-                container.appendChild(div);
-
-                setupDragEvents(div);
-                updateOrder();
+                addPreviewToUI(e.target.result, file.name);
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    function addPreviewToUI(src, identifier) {
+        const container = document.getElementById("previewContainer");
+        const div = document.createElement("div");
+        div.className = "preview-item";
+        div.draggable = true;
+        div.dataset.name = identifier;
+
+        const img = document.createElement("img");
+        img.src = src;
+        img.title = "Drag to reorder | Click to enlarge";
+        img.onclick = () => openFullscreen(src, img);
+        img.onerror = () => {
+            img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
+            img.classList.add('broken-link');
+            img.style.padding = '20px';
+        };
+
+        const removeBtn = document.createElement("div");
+        removeBtn.className = "remove-btn";
+        removeBtn.innerHTML = "×";
+        removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            div.remove();
+            updateOrder();
+        };
+
+        div.appendChild(img);
+        div.appendChild(removeBtn);
+        container.appendChild(div);
+
+        setupDragEvents(div);
+        updateOrder();
     }
 
     function setupDragEvents(item) {
@@ -558,28 +561,17 @@
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
             const offset = x - box.left - box.width / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
-            }
+            if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
+            return closest;
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
     function updateOrder() {
         const order = [...document.querySelectorAll(".preview-item")].map(el => el.dataset.name);
         const orderInput = document.getElementById("screenshotOrder");
-        if (orderInput) {
-            orderInput.value = JSON.stringify(order);
-        }
+        if (orderInput) orderInput.value = JSON.stringify(order);
     }
 
-    // Initialize existing items
-    document.querySelectorAll(".preview-item").forEach(item => setupDragEvents(item));
-</script>
-
-<script>
-    // --- Toast Logic ---
     function showToast(title, message, type = 'success') {
         const toast = document.getElementById('toast');
         const toastTitle = document.getElementById('toastTitle');
@@ -598,77 +590,71 @@
         }
 
         toast.classList.remove('translate-y-24', 'opacity-0');
-
-        setTimeout(() => {
-            toast.classList.add('translate-y-24', 'opacity-0');
-        }, 3000);
+        setTimeout(() => toast.classList.add('translate-y-24', 'opacity-0'), 3000);
     }
 
-    // --- Global Paste Listener ---
-    document.addEventListener('paste', (e) => {
-        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    async function uploadUrlToCloudinary(urlOverride = null) {
+        const urlInput = document.getElementById('screenshot_url');
+        const url = urlOverride || urlInput.value;
+        const btn = document.getElementById('addUrlBtn');
 
+        if (!url) return;
+
+        const originalText = btn.textContent;
+        btn.textContent = "Uploading...";
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/cloudinary/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                addPreviewToUI(data.url, data.url);
+                if (!urlOverride) urlInput.value = "";
+                showToast('Added to Cloud', 'Image saved and optimized');
+            } else {
+                showToast('Upload Failed', data.error || 'Check the URL', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Network Error', 'Could not reach server', 'error');
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // Initialize existing items
+    document.querySelectorAll(".preview-item").forEach(item => setupDragEvents(item));
+
+    // Global Paste Listener
+    document.addEventListener('paste', async (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
         for (let index in items) {
             const item = items[index];
-
-            // Handle Image Files
             if (item.kind === 'file' && item.type.includes('image/')) {
                 const blob = item.getAsFile();
-                const file = new File([blob], `pasted_image_${Date.now()}.png`, { type: 'image/png' });
-
-                // Create a DataTransfer to simulate file input selection
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-
-                // Simulate adding to our preview logic
-                // We reuse handleMultipleFiles but need to mock the input
-                const mockInput = { files: [file] };
-                handleMultipleFiles(mockInput);
-
-                showToast('Image Added', 'Image pasted from clipboard');
-                return;
-            }
-
-            // Handle Image URLs (text)
-            if (item.kind === 'string' && item.type === 'text/plain') {
+                const formData = new FormData();
+                formData.append('file', blob);
+                showToast('Uploading...', 'Processing pasted image');
+                try {
+                    const response = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (data.success) {
+                        addPreviewToUI(data.url, data.url);
+                        showToast('Image Saved', 'Pasted image uploaded to cloud');
+                    }
+                } catch (err) {
+                    showToast('Upload Failed', 'Could not upload pasted image', 'error');
+                }
+            } else if (item.kind === 'string' && item.type === 'text/plain') {
                 item.getAsString((text) => {
-                    if (text.match(/\.(jpeg|jpg|gif|png)$/) != null || text.startsWith('http')) {
-                        // Check if it looks like an image URL
-                        const container = document.getElementById("previewContainer");
-                        const div = document.createElement("div");
-                        div.className = "preview-item";
-                        div.draggable = true;
-                        div.dataset.name = text;
-
-                        const img = document.createElement("img");
-                        img.src = text;
-                        img.title = "Drag to reorder | Click to enlarge";
-                        img.onclick = () => openFullscreen(text, img);
-                        img.onerror = () => {
-                            img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
-                            img.classList.add('broken-link');
-                            img.dataset.originalSrc = text;
-                            img.style.padding = '20px';
-                            img.style.objectFit = 'contain';
-                        };
-
-                        const removeBtn = document.createElement("div");
-                        removeBtn.className = "remove-btn";
-                        removeBtn.innerHTML = "×";
-                        removeBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            div.remove();
-                            updateOrder();
-                        };
-
-                        div.appendChild(img);
-                        div.appendChild(removeBtn);
-                        container.appendChild(div);
-
-                        setupDragEvents(div);
-                        updateOrder();
-
-                        showToast('URL Added', 'Image URL pasted successfully');
+                    if (text.match(/\.(jpeg|jpg|gif|png|webp|avif)$/) != null || text.includes('tradingview.com/x/')) {
+                        uploadUrlToCloudinary(text);
                     }
                 });
             }
@@ -676,56 +662,36 @@
     });
 
     // R:R Calculation Logic for Edit Page
-    document.addEventListener('DOMContentLoaded', function () {
-        const entryInput = document.querySelector('input[name="entry_price"]');
-        const stopInput = document.querySelector('input[name="stop_loss"]');
-        const tpInput = document.getElementById('takeProfitInput');
-        const dirInput = document.querySelector('select[name="direction"]');
-        const rrDisplay = document.getElementById('rrDisplay');
-        const rrValue = document.getElementById('rrValue');
+    const entryInput = document.querySelector('input[name="entry_price"]');
+    const stopInput = document.querySelector('input[name="stop_loss"]');
+    const tpInput = document.getElementById('takeProfitInput');
+    const dirInput = document.querySelector('select[name="direction"]');
+    const rrDisplay = document.getElementById('rrDisplay');
+    const rrValue = document.getElementById('rrValue');
 
-        function calculateRR() {
-            const entry = parseFloat(entryInput.value);
-            const stop = parseFloat(stopInput.value);
-            const tp = parseFloat(tpInput.value);
-            const direction = dirInput.value;
+    function calculateRR() {
+        const entry = parseFloat(entryInput.value);
+        const stop = parseFloat(stopInput.value);
+        const tp = parseFloat(tpInput.value);
+        const direction = dirInput.value;
+        if (!entry || !stop || !tp) { rrDisplay.classList.add('hidden'); return; }
+        let risk, reward;
+        if (direction === "Long") { risk = entry - stop; reward = tp - entry; } 
+        else { risk = stop - entry; reward = entry - tp; }
+        if (risk <= 0 || reward <= 0) { rrDisplay.classList.add('hidden'); return; }
+        const ratio = (reward / risk).toFixed(2);
+        rrValue.textContent = `1:${ratio}`;
+        rrDisplay.classList.remove('hidden');
+        rrValue.className = "font-bold " + (ratio >= 3 ? "text-[#00ff99]" : ratio >= 2 ? "text-yellow-400" : "text-red-400");
+    }
 
-            if (!entry || !stop || !tp) {
-                rrDisplay.classList.add('hidden');
-                return;
-            }
-
-            let risk, reward;
-
-            if (direction === "Long") {
-                risk = entry - stop;
-                reward = tp - entry;
-            } else {
-                risk = stop - entry;
-                reward = entry - tp;
-            }
-
-            if (risk <= 0 || reward <= 0) {
-                rrDisplay.classList.add('hidden');
-                return;
-            }
-
-            const ratio = (reward / risk).toFixed(2);
-            rrValue.textContent = `1:${ratio}`;
-            rrDisplay.classList.remove('hidden');
-
-            // Color Logic
-            rrValue.className = "font-bold " + (ratio >= 3 ? "text-[#00ff99]" : ratio >= 2 ? "text-yellow-400" : "text-red-400");
+    [entryInput, stopInput, tpInput, dirInput].forEach(input => {
+        if (input) {
+            input.addEventListener('input', calculateRR);
+            input.addEventListener('change', calculateRR);
         }
-
-        [entryInput, stopInput, tpInput, dirInput].forEach(input => {
-            if (input) input.addEventListener('input', calculateRR);
-            if (input) input.addEventListener('change', calculateRR);
-        });
-
-        // Initial calc
-        calculateRR();
     });
+    calculateRR();
 </script>
 
 <script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>

@@ -12,6 +12,8 @@ import csv
 import io
 import zipfile
 import time
+import secrets
+import re
 from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
 from uuid import uuid4
@@ -20,41 +22,45 @@ from models import db, bcrypt, User, Task, Trade, RiskSettings, AnalysisHistory
 from config import Config
 import hashlib
 import threading
+import cloudinary
+import cloudinary.uploader
 
-# ---------------- GLOBAL STATE ----------------
-ABORT_PROCESSING = {} # Key: user_id, Value: bool
+
 
 # ---------------- APP SETUP ----------------
 app = Flask(__name__, 
             static_folder='../frontend/src')
 app.config.from_object(Config)
 
+print(f"DEBUG: app.root_path = {app.root_path}")
+
 from jinja2 import ChoiceLoader, FileSystemLoader
+template_paths = [
+    os.path.join(app.root_path, '../frontend'),
+    os.path.join(app.root_path, '../frontend/src/pages')
+]
+print(f"DEBUG: template_paths = {template_paths}")
+
 app.jinja_loader = ChoiceLoader([
-    FileSystemLoader(os.path.join(app.root_path, '../frontend')),
-    FileSystemLoader(os.path.join(app.root_path, '../frontend/src/pages'))
+    FileSystemLoader(p) for p in template_paths
 ])
 
 # Ensure upload folder exists
 if not os.path.exists(app.config.get('UPLOAD_FOLDER', 'uploads')):
     os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'))
 
-# MT5 CSV Storage Setup - New Symbol-Based Hierarchy
-def get_user_mt5_base(user_id):
-    folder = os.path.join(app.root_path, 'uploads', 'users', f'user_{user_id}', 'mt5')
-    os.makedirs(folder, exist_ok=True)
-    return folder
+# Cloudinary Configuration
+cloudinary.config(
+    cloud_name=app.config.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=app.config.get("CLOUDINARY_API_KEY"),
+    api_secret=app.config.get("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
-def get_symbol_folder(user_id, symbol):
-    base = get_user_mt5_base(user_id)
-    folder = os.path.join(base, symbol.upper())
-    os.makedirs(folder, exist_ok=True)
-    return folder
 
-app.config['MT5_UPLOAD_BASE_FOLDER'] = os.path.join(app.root_path, 'uploads', 'users')
 
 # TradingView-style timeframe lockdown (Gold Standard: M1 Backbone Enabled)
-ALLOWED_TIMEFRAMES = ["M1", "M3", "M5", "M15", "M30", "H1", "H2", "H4", "D1", "W1"]
+
 
 db.init_app(app)
 bcrypt.init_app(app)
@@ -65,32 +71,37 @@ with app.app_context():
         db.create_all()
         
         # Safe Migration Helper
-        def safe_add_column(sql):
+        def safe_add_column(table_name, column_name, column_type):
             try:
-                db.session.execute(text(sql))
-                db.session.commit()
-                print(f"✅ Migration Success: {sql}")
+                inspector = inspect(db.engine)
+                columns = [c['name'] for c in inspector.get_columns(table_name)]
+                if column_name not in columns:
+                    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    db.session.commit()
+                    print(f"Migration Success: Added column {column_name} to {table_name}")
+                else:
+                    # print(f"Info: Migration Skipped (Column {column_name} exists in {table_name})")
+                    pass
             except Exception as e:
                 db.session.rollback()
-                if "already exists" in str(e).lower() or "duplicate column" in str(e).lower():
-                    print(f"ℹ️ Migration Skipped (Column exists): {sql}")
-                else:
-                    print(f"⚠️ Migration Error ({sql}): {e}")
+                print(f"Warning: Migration Error (Adding {column_name} to {table_name}): {e}")
 
         # Run Migrations for missing columns
-        safe_add_column("ALTER TABLE trades ADD COLUMN IF NOT EXISTS duration INTEGER")
-        safe_add_column("ALTER TABLE trades ADD COLUMN IF NOT EXISTS rr FLOAT")
+        safe_add_column("trades", "duration", "INTEGER")
+        safe_add_column("trades", "rr", "FLOAT")
+        safe_add_column("trades", "emotion", "VARCHAR(50)")
+        safe_add_column("trades", "timeframe", "VARCHAR(20)")
 
         # Seed RiskSettings if empty
         if not RiskSettings.query.first():
-            print("🛠️ Seeding default Risk Settings...")
+            print("Seeding default Risk Settings...")
             default_settings = RiskSettings(profit_target=800.0, max_daily_loss=500.0)
             db.session.add(default_settings)
             db.session.commit()
-            print("✅ Risk Settings seeded.")
+            print("Database initialized successfully.")
             
     except Exception as e:
-        print(f"⚠️ DB Init failed: {e}")
+        print(f"Error: DB Init failed: {e}")
 
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
@@ -100,7 +111,7 @@ if app.config.get("MAIL_USERNAME"):
     mail = Mail(app)
 else:
     # Dummy mail object or handle gracefully if mail not configured
-    print("⚠️ Mail not configured. Emails will not send.")
+    print("Warning: Mail not configured. Emails will not send.")
     mail = Mail(app) # Initialize anyway to avoid import errors later, but send() might fail if not caught
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
@@ -242,513 +253,38 @@ def hash_file(file_path):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def aggregate_candles(m1_candles, timeframe_minutes):
-    """
-    Professional Timeframe Aggregation Engine (Gold Standard).
-    Groups M1 candles into natural UTC time boundaries (e.g. :00, :05).
-    Strictly follows OHLC rules and ensures timestamps align to grid.
-    """
-    if not m1_candles:
-        return []
-    
-    # 1. Ensure input is sorted chronologically
-    sorted_m1 = sorted(m1_candles, key=lambda x: x['time'])
-    
-    aggregated = []
-    interval_seconds = timeframe_minutes * 60
-    
-    current_bucket_start = None
-    bucket_candles = []
-    
-    for candle in sorted_m1:
-        ts = candle['time']
-        # Floor to the start of the timeframe interval (Standard Alignment)
-        bucket_start = (ts // interval_seconds) * interval_seconds
-        
-        # If we moved to a new bucket, flush the old one
-        if current_bucket_start is not None and bucket_start != current_bucket_start:
-            if bucket_candles:
-                aggregated.append(build_candle(current_bucket_start, bucket_candles))
-            bucket_candles = []
-            
-        current_bucket_start = bucket_start
-        bucket_candles.append(candle)
-        
-    # Flush final bucket
-    if bucket_candles and current_bucket_start is not None:
-        aggregated.append(build_candle(current_bucket_start, bucket_candles))
-            
-    return aggregated
+def generate_cloudinary_public_id(base_name="trade_screenshot"):
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d_%H-%M")
+    day_str = now.strftime("%A")
+    random_hex = secrets.token_hex(4)
+    return f"{date_str}_{day_str}_{base_name}_{random_hex}"
 
-def build_candle(timestamp, group):
-    """Helper to build a single OHLC candle from a group."""
-    return {
-        "time": timestamp, # Aligned to grid start
-        "open": group[0]['open'],
-        "high": max(c['high'] for c in group),
-        "low": min(c['low'] for c in group),
-        "close": group[-1]['close'],
-        "volume": sum(c['volume'] for c in group)
-    }
+def get_cloudinary_id(url):
+    """Extracts public ID from Cloudinary URL, normalized for comparison"""
+    if not url or 'cloudinary' not in url: return None
+    match = re.search(r'trading_journal/.*', url)
+    if match:
+        pid = match.group(0).rsplit('.', 1)[0]
+        # Remove transformation strings like /w_1200,f_auto/
+        pid = re.sub(r'\/[a-z]_[a-z0-9,]+', '', pid)
+        # Remove versioning if present (e.g., /v123456789/)
+        pid = re.sub(r'\/v\d+\/', '/', pid)
+        return pid.replace('//', '/')
+    return None
 
-def background_process_csv(file_path, symbol_folder, symbol, user_id):
-    """Background task to process CSV into hierarchical symbol structure."""
-    status_path = os.path.join(symbol_folder, 'status.json')
-    meta_path = os.path.join(symbol_folder, 'meta.json')
-    processed_base = os.path.join(symbol_folder, 'processed')
-    
-    def update_progress(percent, stage="Processing CSV..."):
-        try:
-            with open(status_path, 'w') as f:
-                json.dump({"state": "PROCESSING", "progress": percent, "stage": stage}, f)
-        except: pass
-
+def delete_from_cloudinary(url):
+    if not url or "cloudinary" not in url:
+        return
     try:
-        update_progress(0, "Starting...")
-        print(f"🔄 [BACKGROUND] Started processing for {symbol}")
-
-        # Pass callback and user_id to parser
-        parsed_data = parse_mt5_csv(file_path, symbol=symbol, progress_callback=update_progress, user_id=user_id)
-        
-        if parsed_data:
-            update_progress(90, "Finalizing storage...")
-            # Save meta.json (Rich Data from Parser)
-            with open(meta_path, 'w') as f:
-                json.dump(parsed_data['meta'], f, indent=2)
-            
-            # Save each timeframe separately in zone.json format
-            for tf, candles in parsed_data['timeframes'].items():
-                tf_folder = os.path.join(processed_base, tf.upper())
-                os.makedirs(tf_folder, exist_ok=True)
-                zone_path = os.path.join(tf_folder, 'zone.json')
-                zone_data = {
-                    "symbol": symbol,
-                    "timeframe": tf.upper(),
-                    "candles": candles
-                }
-                with open(zone_path, 'w') as f:
-                    json.dump(zone_data, f)
-            
-            with open(status_path, 'w') as f:
-                json.dump({"state": "READY", "timestamp": datetime.utcnow().isoformat(), "progress": 100}, f)
-            print(f"✅ Hierarchical processing complete for: {symbol}")
-        else:
-            with open(status_path, 'w') as f:
-                json.dump({"state": "ERROR", "message": "Parsing failed"}, f)
+        public_id = get_cloudinary_id(url)
+        if public_id:
+            print(f"Deleting Cloudinary asset: {public_id}")
+            cloudinary.uploader.destroy(public_id)
     except Exception as e:
-        print(f"❌ [BACKGROUND] Processing error for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-        try:
-            with open(status_path, 'w') as f:
-                json.dump({"state": "ERROR", "message": str(e)}, f)
-        except Exception as write_err:
-             print(f"❌ [BACKGROUND] Failed to write status file: {write_err}")
+        print(f"Error deleting from Cloudinary: {e}")
 
-import multiprocessing
-from multiprocessing import Pool, cpu_count
-import pandas as pd
 
-# --- Multiprocessing & TF Detection Helpers ---
-
-TF_MAP = {
-    1: "M1", 3: "M3", 5: "M5", 15: "M15", 30: "M30",
-    60: "H1", 120: "H2", 240: "H4", 1440: "D1", 10080: "W1"
-}
-
-def tf_label(minutes):
-    return TF_MAP.get(minutes, f"M{minutes}")
-
-def detect_timeframe_from_csv(file_path, sep=','):
-    """
-    Auto-detect timeframe by scanning first 10,000 rows.
-    Returns: (minutes, label) e.g., (5, 'M5')
-    """
-    try:
-        # 1. Broad Scan (Increase to 10k to catch sparse starts)
-        scan_rows = 10000
-        
-        # Optimize Engine: Use 'c' if simple separator, else 'python'
-        engine = 'c' if len(sep) == 1 else 'python'
-        
-        # Use Detected Separator!
-        df = pd.read_csv(file_path, sep=sep, usecols=[0, 1], nrows=scan_rows, header=None, engine=engine, on_bad_lines='skip', encoding_errors='ignore')
-        
-        # Sniff header
-        if type(df.iloc[0,0]) == str and 'DATE' in df.iloc[0,0].upper():
-             df = pd.read_csv(file_path, sep=sep, nrows=scan_rows, engine=engine, on_bad_lines='skip', encoding_errors='ignore')
-        else:
-             df.columns = ['DATE', 'TIME'] + [str(i) for i in range(2, len(df.columns))]
-
-        df.columns = [c.upper().strip() for c in df.columns]
-
-        # Parse Dates
-        if 'TIME' in df.columns:
-            df['DT_STR'] = df['DATE'].astype(str) + ' ' + df['TIME'].astype(str)
-            df['DT'] = pd.to_datetime(df['DT_STR'], format='mixed', errors='coerce')
-        else:
-             df['DT'] = pd.to_datetime(df['DATE'], format='mixed', errors='coerce')
-
-        df = df.dropna(subset=['DT']).sort_values('DT')
-        
-        # Calculate Diffs in Minutes
-        diffs = df['DT'].diff().dt.total_seconds() / 60
-        diffs = diffs[diffs > 0] # Ignore 0 or negative
-        
-        if len(diffs) == 0:
-            return 1, "M1" # Fallback
-
-        # Smart Detection:
-        # If we see ANY valid intervals <= 1.1 minutes, it IS M1 base.
-        # This acts as a 'resolution' check. Even if mode is 15min (sparse),
-        # the presence of 1m diffs proves 1m resolution capability.
-        min_diff = diffs.min()
-        
-        # <= 1.1 catches M1 (1.0) and Sub-minute/Tick data (0.001 - 0.99)
-        if min_diff <= 1.1:
-            print(f"🕵️ [DETECTOR] Found high-res intervals ({min_diff:.4f}m). Forcing M1 Base.")
-            return 1, "M1"
-        
-        if 2.9 <= min_diff <= 3.1:
-             return 3, "M3"
-
-        if 4.9 <= min_diff <= 5.1:
-             return 5, "M5"
-
-        # Fallback to mode
-        mode_diff = int(diffs.mode()[0])
-        # Safety: If mode is 1, return 1 (Double Check)
-        if mode_diff <= 1:
-             return 1, "M1"
-
-        return mode_diff, tf_label(mode_diff)
-
-    except Exception as e:
-        print(f"TF Auto-Detect Warning: {e}")
-    
-    return 1, "M1" # Fallback
-
-def process_chunk_worker(chunk):
-    """
-    Worker function for Multiprocessing CSV Parse.
-    Must be top-level to be pickleable on Windows.
-    """
-    try:
-        # Normalize Columns
-        chunk.columns = [c.upper().strip().replace('<','').replace('>','') for c in chunk.columns]
-        
-        # Standardize Names
-        cols = chunk.columns
-        
-        # Vectorized Time Parsing
-        if 'TIME' in cols:
-            chunk['DT_STR'] = chunk['DATE'].astype(str) + ' ' + chunk['TIME'].astype(str)
-            chunk['DT'] = pd.to_datetime(chunk['DT_STR'], format='mixed', errors='coerce')
-        else:
-            chunk['DT'] = pd.to_datetime(chunk['DATE'], format='mixed', errors='coerce')
-            
-        chunk = chunk.dropna(subset=['DT'])
-        
-        # Vectorized Float Conversion
-        for col in ['OPEN', 'HIGH', 'LOW', 'CLOSE']:
-            if col in cols:
-                 chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
-
-        # Volume Handling
-        vol_col = 'VOL'
-        if 'TICKVOL' in cols: vol_col = 'TICKVOL'
-        elif 'VOLUME' in cols: vol_col = 'VOLUME'
-        
-        if vol_col in cols:
-             chunk['VOL'] = pd.to_numeric(chunk[vol_col], errors='coerce').fillna(0)
-        else:
-             chunk['VOL'] = 0
-             
-        chunk = chunk.dropna(subset=['OPEN', 'HIGH', 'LOW', 'CLOSE'])
-        
-        # Return lightweight dict list for main thread aggregation
-        # Converting to dict here reduces pickling overhead of full DF? 
-        # Actually returning DF is usually fine for pandas, but let's return processed DF
-        return chunk[['DT', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']]
-        
-    except Exception as e:
-        # print(f"Worker Error: {e}") 
-        return None
-
-def expand_to_1m_backbone(df, base_tf_minutes):
-    """
-    Expands a higher timeframe DataFrame (e.g. M15) into a structurally correct 
-    1-minute backbone. Vectorized for MAX speed.
-    Matches TradingView-style synthetic expansion.
-    """
-    if base_tf_minutes <= 1:
-        return df
-        
-    last_ts = df.index[-1]
-    end_ts = last_ts + pd.Timedelta(minutes=base_tf_minutes - 1)
-    
-    # Expand index to 1-minute slots
-    new_index = pd.date_range(start=df.index[0], end=end_ts, freq='1min')
-    df_1m = df.reindex(new_index).ffill()
-    
-    # Adjust volume (distributed)
-    df_1m['volume'] = df_1m['volume'] / base_tf_minutes
-    
-    # Restore time column for consistency
-    df_1m['time'] = df_1m.index.astype('int64') // 10**9
-    
-    return df_1m
-
-def resample_candles(df, minutes):
-    """
-     aggregates 1M/base DataFrame to target minutes using Pandas Resample.
-     Returns a list of dicts (standard candle format).
-     Enforces strict time alignment (TradingView style).
-    """
-    try:
-        rule = f"{minutes}min"
-        
-        # Resample with specific trading rules (Left/Left closed)
-        # origin='epoch' ensures alignment to 00:00:00
-        agg_df = df.resample(rule, closed='left', label='left', origin='start_day').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-        
-        # Reset index to access 'DT' as column
-        agg_df = agg_df.reset_index()
-        
-        # Convert back to standard dict list
-        # Vectorized dict creation
-        agg_df['time'] = agg_df['DT'].astype('int64') // 10**9
-        
-        return agg_df[['time', 'open', 'high', 'low', 'close', 'volume']].to_dict('records')
-    except Exception as e:
-        print(f"Resample Error ({minutes}m): {e}")
-        return []
-
-def parse_mt5_csv(file_path, symbol="Unknown", progress_callback=None, user_id=None):
-    """
-    Parses MT5 CSV using Multiprocessing + Pandas for MAX speed.
-    Auto-detects the base timeframe first.
-    """
-    base_candles_dict = {} # Deduplication Buffer
-    
-    # Check for early abort
-    if user_id and ABORT_PROCESSING.get(user_id):
-        print(f"🛑 [PARSER] Aborting before start for user {user_id}")
-        return None
-    
-    try:
-        # 1. Quick Line Count
-        total_rows = 1000000 
-        try:
-           with open(file_path, 'rb') as f:
-               total_rows = sum(1 for _ in f)
-        except: pass
-        
-        # 2. Detect Separator FIRST (Prevent read hang)
-        sep = ',' # Default assumption
-        try:
-            # Try sniffing with different encodings
-            for enc in ['utf-8', 'utf-16', 'latin1']:
-                try:
-                    with open(file_path, 'r', encoding=enc) as f:
-                        header = f.readline()
-                        if ',' in header: 
-                            sep = ','
-                            break
-                        elif ';' in header: 
-                            sep = ';'
-                            break
-                        elif '\t' in header: 
-                            sep = '\t'
-                            break
-                        
-                        # Check strict whitespace last
-                        if len(header.split()) > 1:
-                            sep = r'\s+'
-                            break
-                except: continue
-        except: pass
-
-        # 3. Auto-Detect Timeframe (Pass Separator)
-        if progress_callback: progress_callback(1, "Detecting Timeframe...")
-        # Now we pass the separator so it reads correctly!
-        detected_tf_minutes, detected_tf = detect_timeframe_from_csv(file_path, sep=sep)
-        print(f"✅ Auto-Detected Timeframe: {detected_tf} ({detected_tf_minutes}m)")
-
-        # 4. Multiprocessing Setup
-        chunksize = 100000
-        cpu_workers = max(1, cpu_count() - 1)
-        
-        if progress_callback:
-            progress_callback(5, f"Spawning {cpu_workers} Workers...")
-            
-        pool = Pool(processes=cpu_workers)
-        processed_chunks = []
-        
-        # Initialize Reader
-        reader = pd.read_csv(
-            file_path, 
-            sep=sep, 
-            chunksize=chunksize, 
-            engine='python',
-            on_bad_lines='skip',
-            encoding_errors='ignore'
-        )
-        if sep == r'\s+':
-             reader = pd.read_csv(file_path, sep=r'\s+', chunksize=chunksize, engine='python')
-             
-        # Submit Jobs
-        for chunk in reader:
-            # Async submit to pool
-            processed_chunks.append(pool.apply_async(process_chunk_worker, (chunk,)))
-        
-        pool.close()
-        
-        # Monitor Progress & Collect
-        total_chunks = len(processed_chunks)
-        completed_chunks = 0
-        
-        for res in processed_chunks:
-            # Check for cancellation during collection
-            if user_id and ABORT_PROCESSING.get(user_id):
-                print(f"🛑 [PARSER] Aborting collection for user {user_id}")
-                pool.terminate() # Kill workers
-                return None
-
-            chunk_data = res.get() # Block until done
-            completed_chunks += 1
-            
-            if chunk_data is not None and not chunk_data.empty:
-                # Merge into dict (Blocking but fast in memory)
-                # Convert to numpy arrays for speed
-                times  = chunk_data['DT'].values.astype('int64') // 10**9
-                opens  = chunk_data['OPEN'].values
-                highs  = chunk_data['HIGH'].values
-                lows   = chunk_data['LOW'].values
-                closes = chunk_data['CLOSE'].values
-                vols   = chunk_data['VOL'].values
-                
-                for t, o, h, l, c, v in zip(times, opens, highs, lows, closes, vols):
-                    base_candles_dict[t] = {
-                        "time": int(t),
-                        "open": float(o),
-                        "high": float(h),
-                        "low": float(l),
-                        "close": float(c),
-                        "volume": int(v)
-                    }
-            
-            if progress_callback:
-                pct = 5 + int((completed_chunks / total_chunks) * 80) # 5% to 85%
-                progress_callback(pct, f"Parallel Parsing... ({pct}%)")
-        
-        pool.join()
-
-    except Exception as e:
-        print(f"Multiprocessing Parse Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-        
-    if not base_candles_dict: 
-        print("No candles parsed (Pandas MP)")
-        return None
-        
-    # Convert to list and sort
-    base_candles = list(base_candles_dict.values())
-    base_candles.sort(key=lambda x: x['time'])
-
-    # --- AGGREGATION PHASE (Pandas Resample) ---
-    
-    # 1. Prepare Master DataFrame (Source of Truth)
-    # This is critical for correct alignment (resample needs DateTimeIndex)
-    base_df = pd.DataFrame(base_candles)
-    base_df['DT'] = pd.to_datetime(base_df['time'], unit='s')
-    base_df.set_index('DT', inplace=True)
-    base_df.sort_index(inplace=True)
-
-    # Build all timeframes (GOLD STANDARD: M1, M3, M5 restored)
-    tf_hierarchy = [
-        ("M1", 1), ("M3", 3), ("M5", 5), ("M15", 15), ("M30", 30),
-        ("H1", 60), ("H2", 120), ("H4", 240), ("D1", 1440), ("W1", 10080)
-    ]
-    
-    aggregated_tfs = {}
-    
-    if progress_callback: progress_callback(90, "Building M1 Backbone & Aggregating...")
-
-    # 1. GENERATE GOLDEN 1M BACKBONE
-    if detected_tf_minutes == 1:
-        df_1m = base_df.copy()
-    else:
-        print(f"🛠️ [PARSER] Expanding {detected_tf} to 1M Backbone...")
-        df_1m = expand_to_1m_backbone(base_df.copy(), detected_tf_minutes)
-
-    # 2. AGGREGATE ALL FROM BACKBONE
-    for tf_name, tf_minutes in tf_hierarchy:
-        try:
-            if tf_minutes == 1:
-                # M1 is the backbone itself
-                aggregated_tfs["M1"] = df_1m[['time', 'open', 'high', 'low', 'close', 'volume']].reset_index(drop=True).to_dict('records')
-            elif tf_minutes == detected_tf_minutes:
-                # If target == source, use original to avoid any tiny float/resample drift
-                aggregated_tfs[tf_name] = [c.copy() for c in base_candles]
-            else:
-                # Aggregate using optimized resample from 1M source
-                aggregated_tfs[tf_name] = resample_candles(df_1m, tf_minutes)
-                
-        except Exception as e:
-            print(f"Failed to build {tf_name}: {e}")
-
-    # --- FINAL SANITY CHECKS (Lock-in Phase) ---
-    print(f"\n📈 [LOCK-IN] Sanity check for {symbol}:")
-    for tf_name in [t[0] for t in tf_hierarchy]:
-        if tf_name in aggregated_tfs:
-            print(f"  {tf_name}: {len(aggregated_tfs[tf_name])} candles")
-    
-    # OHLC Integrity Test (Verify M5 if M1 source exists)
-    if "M1" in aggregated_tfs and "M5" in aggregated_tfs and len(aggregated_tfs["M5"]) > 0:
-        test_candle = aggregated_tfs["M5"][0]
-        m1_start = test_candle["time"]
-        m1_relevant = [c for c in aggregated_tfs["M1"] if m1_start <= c["time"] < m1_start + 300]
-        if m1_relevant:
-            passed = (
-                test_candle["open"] == m1_relevant[0]["open"] and
-                test_candle["close"] == m1_relevant[-1]["close"] and
-                test_candle["high"] == max(c["high"] for c in m1_relevant) and
-                test_candle["low"] == min(c["low"] for c in m1_relevant)
-            )
-            print(f"  OHLC Integrity (M1->M5): {'✅ PASSED' if passed else '❌ FAILED'}")
-
-    # Build Rich Metadata
-    candle_counts = {tf: len(data) for tf, data in aggregated_tfs.items()}
-
-    result = {
-        "meta": {
-            "symbol": symbol,
-            "source": "MT5",
-            # ... [Metadata preserved] ...
-            "source_tf": detected_tf,
-            "original_timeframe": detected_tf,
-            "csv_hash": "hash_placeholder", 
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "available_timeframes": list(aggregated_tfs.keys()),
-            "derived_timeframes": [tf for tf in aggregated_tfs.keys() if tf != detected_tf],
-            "candle_counts": candle_counts,
-            "data_quality": {
-                "source_count": len(base_candles),
-                "detected_timeframe": detected_tf,
-            }
-        },
-        "timeframes": aggregated_tfs
-    }
-    return result
 
 # -------------------------------------------------------------
 # ---------------- ANALYSIS ----------------
@@ -769,15 +305,14 @@ def analysis():
             if "before_image" in request.files:
                 file = request.files["before_image"]
                 if file and file.filename != "":
-                    ext = file.filename.rsplit(".", 1)[1].lower()
-                    filename = f"{uuid4()}.{ext}"
-                    # Ensure directory exists: frontend/src/uploads/analysis
-                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    full_path = os.path.join(upload_dir, filename)
-                    file.save(full_path)
-                    before_path = f"uploads/analysis/{filename}"
+                    # Cloudinary Upload with Auto-Compression & Resize
+                    result = cloudinary.uploader.upload(
+                        file,
+                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        public_id=generate_cloudinary_public_id("analysis_before"),
+                        transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                    )
+                    before_path = result.get("secure_url")
 
             new_analysis = AnalysisHistory(
                 user_id=current_user.id,
@@ -825,26 +360,26 @@ def edit_analysis(id):
             if "before_image" in request.files:
                 file = request.files["before_image"]
                 if file and file.filename != "":
-                    ext = file.filename.rsplit(".", 1)[1].lower()
-                    filename = f"{uuid4()}.{ext}"
-                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    full_path = os.path.join(upload_dir, filename)
-                    file.save(full_path)
-                    analysis.before_image = f"uploads/analysis/{filename}"
+                    # Cloudinary Upload with Auto-Compression & Resize
+                    result = cloudinary.uploader.upload(
+                        file,
+                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        public_id=generate_cloudinary_public_id("analysis_before"),
+                        transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                    )
+                    analysis.before_image = result.get("secure_url")
 
             if "after_image" in request.files:
                 file = request.files["after_image"]
                 if file and file.filename != "":
-                    ext = file.filename.rsplit(".", 1)[1].lower()
-                    filename = f"{uuid4()}.{ext}"
-                    upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    full_path = os.path.join(upload_dir, filename)
-                    file.save(full_path)
-                    analysis.after_image = f"uploads/analysis/{filename}"
+                    # Cloudinary Upload with Auto-Compression & Resize
+                    result = cloudinary.uploader.upload(
+                        file,
+                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        public_id=generate_cloudinary_public_id("analysis_after"),
+                        transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                    )
+                    analysis.after_image = result.get("secure_url")
 
             db.session.commit()
             flash("Analysis updated successfully!", "success")
@@ -865,6 +400,12 @@ def delete_analysis(id):
         abort(403)
     
     try:
+        # Cloudinary Cleanup
+        if analysis.before_image:
+            delete_from_cloudinary(analysis.before_image)
+        if analysis.after_image:
+            delete_from_cloudinary(analysis.after_image)
+
         db.session.delete(analysis)
         db.session.commit()
         return jsonify({"success": True})
@@ -903,27 +444,33 @@ def update_analysis(id):
         if "before_image" in request.files:
             file = request.files["before_image"]
             if file and file.filename != "":
-                ext = file.filename.rsplit(".", 1)[1].lower()
-                filename = f"{uuid4()}.{ext}"
-                upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                full_path = os.path.join(upload_dir, filename)
-                file.save(full_path)
-                record.before_image = f"uploads/analysis/{filename}"
+                # Cloudinary Upload with Auto-Compression & Resize
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder=f"trading_journal/user_{current_user.id}/analysis",
+                    public_id=generate_cloudinary_public_id("analysis_before"),
+                    transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                )
+                # Delete old image if it exists
+                if record.before_image:
+                    delete_from_cloudinary(record.before_image)
+                record.before_image = result.get("secure_url")
 
         # Update After Image
         if "after_image" in request.files:
             file = request.files["after_image"]
             if file and file.filename != "":
-                ext = file.filename.rsplit(".", 1)[1].lower()
-                filename = f"{uuid4()}.{ext}"
-                upload_dir = os.path.join(app.root_path, "../frontend/src/uploads/analysis")
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                full_path = os.path.join(upload_dir, filename)
-                file.save(full_path)
-                record.after_image = f"uploads/analysis/{filename}"
+                # Cloudinary Upload with Auto-Compression & Resize
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder=f"trading_journal/user_{current_user.id}/analysis",
+                    public_id=generate_cloudinary_public_id("analysis_after"),
+                    transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                )
+                # Delete old image if it exists
+                if record.after_image:
+                    delete_from_cloudinary(record.after_image)
+                record.after_image = result.get("secure_url")
 
         # Update Text Fields
         if request.form.get("mistakes"):
@@ -968,21 +515,21 @@ def delete_analysis_image():
         abort(403)
 
     if data["type"] == "before" and analysis.before_image:
+        delete_from_cloudinary(analysis.before_image)
+        # Also check local file just in case of old data
         try:
             full_path = os.path.join(app.root_path, "../frontend/src", analysis.before_image)
-            if os.path.exists(full_path):
-                os.remove(full_path)
-        except Exception as e:
-            print(f"Error deleting file: {e}")
+            if os.path.exists(full_path): os.remove(full_path)
+        except: pass
         analysis.before_image = None
 
     if data["type"] == "after" and analysis.after_image:
+        delete_from_cloudinary(analysis.after_image)
+        # Also check local file just in case of old data
         try:
             full_path = os.path.join(app.root_path, "../frontend/src", analysis.after_image)
-            if os.path.exists(full_path):
-                os.remove(full_path)
-        except Exception as e:
-            print(f"Error deleting file: {e}")
+            if os.path.exists(full_path): os.remove(full_path)
+        except: pass
         analysis.after_image = None
 
     db.session.commit()
@@ -991,28 +538,51 @@ def delete_analysis_image():
 
 
 # -------------------------------------------------------------
-# File upload endpoint (binary‑safe, MIME‑checked)
-@app.route('/upload/<int:trade_id>', methods=['POST'])
+# General Cloudinary Upload API (Handles both files and URLs)
+@app.route('/api/cloudinary/upload', methods=['POST'])
 @login_required
-def upload_file(trade_id: int):
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Empty filename'}), 400
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
-    
-    upload_folder = app.config.get('UPLOAD_FOLDER', 'static/uploads')
-    trade_folder = os.path.join(upload_folder, f'trade_{trade_id}')
-    os.makedirs(trade_folder, exist_ok=True)
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(trade_folder, filename)
-    # Binary write to avoid corruption
-    with open(file_path, 'wb') as f:
-        f.write(file.read())
-    file_url = url_for('serve_file', filename=f'trade_{trade_id}/{filename}', _external=False)
-    return jsonify({'success': True, 'url': file_url})
+def api_cloudinary_upload():
+    try:
+        # 1. Handle File Upload
+        if 'file' in request.files:
+            file = request.files['file']
+            if file and file.filename != '' and allowed_file(file.filename):
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder=f"trading_journal/user_{current_user.id}/instant_uploads",
+                    public_id=generate_cloudinary_public_id("instant_file"),
+                    transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                )
+                return jsonify({'success': True, 'url': result.get("secure_url"), 'name': file.filename})
+
+        # 2. Handle URL Upload
+        data = request.get_json() if request.is_json else request.form
+        url = data.get('url')
+        if url and url.strip():
+            target_url = url.strip()
+            
+            # --- TradingView URL Fix ---
+            # If it's a TV chart link (e.g., /x/ABCD/), convert to direct S3 link
+            if "tradingview.com/x/" in target_url:
+                # Extract the ID (e.g., qNE5RuDV from .../x/qNE5RuDV/)
+                parts = target_url.strip('/').split('/')
+                tv_id = parts[-1]
+                if tv_id:
+                    first_char = tv_id[0].lower()
+                    target_url = f"https://s3.tradingview.com/snapshots/{first_char}/{tv_id}.png"
+
+            result = cloudinary.uploader.upload(
+                target_url,
+                folder=f"trading_journal/user_{current_user.id}/instant_uploads",
+                public_id=generate_cloudinary_public_id("instant_url"),
+                transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+            )
+            return jsonify({'success': True, 'url': result.get("secure_url"), 'name': "url_upload"})
+
+        return jsonify({'success': False, 'error': 'No valid file or URL provided'}), 400
+    except Exception as e:
+        print(f"Cloudinary API Upload Error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 # -------------------------------------------------------------
 # -------------------------------------------------------------
 # Serve uploaded files with correct MIME type
@@ -1095,9 +665,6 @@ def index():
             login_attempts[ip] = 0  # Reset on success
             login_user(user)
             
-            # 🔥 Redirection Logic based on account_type
-            if user.account_type == 'backtest':
-                return redirect(url_for('chart_page'))
             return redirect(url_for('dashboard'))
         else:
             flash('Invalid email or password')
@@ -1141,8 +708,7 @@ def register():
             flash('Email already registered')
             return redirect(url_for('register'))
 
-        account_type = request.form.get('account_type', 'journal')
-        user = User(username=username, name=name, email=email, account_type=account_type)
+        user = User(username=username, name=name, email=email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -1198,393 +764,20 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
-@app.route('/chart')
-@login_required
-def chart_page():
-    # Access Check: Backtest user only
-    # Treat None as 'journal'
-    if current_user.account_type != 'backtest':
-        return redirect(url_for('dashboard'))
-    
-    user_base = get_user_mt5_base(current_user.id)
-    active_symbol = session.get('active_symbol')
-    
-    # 1. Validate Active Symbol if present
-    if active_symbol:
-        symbol_folder = get_symbol_folder(current_user.id, active_symbol)
-        try:
-            # Check for meaningful data presence
-            has_meta = os.path.exists(os.path.join(symbol_folder, 'meta.json'))
-            has_processed = os.path.exists(os.path.join(symbol_folder, 'processed'))
-            has_status = os.path.exists(os.path.join(symbol_folder, 'status.json'))
-            
-            if not (has_meta or has_processed or has_status):
-                print(f"⚠️ Active symbol {active_symbol} found empty/invalid. Clearing from session.")
-                session.pop('active_symbol', None)
-                active_symbol = None
-        except Exception as e:
-            print(f"Error validating symbol {active_symbol}: {e}")
-            active_symbol = None
-
-    # 2. Fallback Selection: If no active symbol, pick latest valid one
-    if not active_symbol:
-        if os.path.exists(user_base):
-            all_symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
-            valid_symbols = []
-            for s in all_symbols:
-                s_path = os.path.join(user_base, s)
-                if os.path.exists(os.path.join(s_path, 'meta.json')) or os.path.exists(os.path.join(s_path, 'processed')):
-                    valid_symbols.append(s)
-            
-            if valid_symbols:
-                # Sort by recently modified
-                valid_symbols.sort(key=lambda d: os.path.getmtime(os.path.join(user_base, d)), reverse=True)
-                active_symbol = valid_symbols[0]
-                session['active_symbol'] = active_symbol
-    
-    status = "IDLE"
-    meta = None
-    
-    if active_symbol:
-        symbol_folder = get_symbol_folder(current_user.id, active_symbol)
-        status_path = os.path.join(symbol_folder, 'status.json')
-        meta_path = os.path.join(symbol_folder, 'meta.json')
-        
-        if os.path.exists(status_path):
-            with open(status_path, 'r') as f:
-                try:
-                    status_data = json.load(f)
-                    status = status_data.get('status', 'IDLE')
-                except: status = 'IDLE'
-        
-        if os.path.exists(meta_path):
-            with open(meta_path, 'r') as f:
-                try: meta = json.load(f)
-                except: meta = None
-            
-    return render_template('chart.html', symbol=active_symbol, meta=meta, processing_status=status)
 
 
-@app.route('/upload-mt5-csv', methods=['POST'])
-@login_required
-def upload_mt5_csv():
-    if 'file' not in request.files:
-        flash('No file part')
-        return redirect(url_for('chart_page'))
-    
-    file = request.files['file']
-    if file.filename == '':
-        flash('No selected file')
-        return redirect(url_for('chart_page'))
-    
-    if file and file.filename.lower().endswith('.csv'):
-        filename = secure_filename(file.filename)
-        
-        # 💡 Extract symbol from filename (e.g., NAS100_M1.csv -> NAS100)
-        symbol = filename.split('_')[0].upper()
-        if not symbol: symbol = "UNKNOWN"
-        
-        print(f"📂 [UPLOAD] File: {filename} -> Symbol: {symbol}")
-
-        symbol_folder = get_symbol_folder(current_user.id, symbol)
-        raw_folder = os.path.join(symbol_folder, 'raw')
-        os.makedirs(raw_folder, exist_ok=True)
-        
-        file_path = os.path.join(raw_folder, 'original.csv')
-        file.save(file_path)
-        
-        # Calculate hash for duplicate detection
-        file_hash = hash_file(file_path)
-        print(f"#️⃣ [UPLOAD] File Hash: {file_hash}")
-        meta_path = os.path.join(symbol_folder, 'meta.json')
-        meta_path = os.path.join(symbol_folder, 'meta.json')
-        status_path = os.path.join(symbol_folder, 'status.json')
-        
-        should_process = True
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, 'r') as f:
-                    meta = json.load(f)
-                    if meta.get('csv_hash') == file_hash:
-                        print(f"⚡ Cache hit for {symbol} (hash matched)")
-                        should_process = False
-                        with open(status_path, 'w') as sf:
-                            json.dump({"state": "READY"}, sf)
-            except Exception:
-                pass
-
-        if should_process:
-            print(f"🔄 Starting hierarchical processing for {symbol}...")
-            # Clear abort flag for this user before starting
-            ABORT_PROCESSING[current_user.id] = False
-            thread = threading.Thread(target=background_process_csv, args=(file_path, symbol_folder, symbol, current_user.id))
-            thread.start()
-        
-        session['active_symbol'] = symbol
-        msg = f'MT5 CSV for {symbol} uploaded! Processing in background...' if should_process else f'MT5 CSV for {symbol} uploaded (Used Cache)!'
-        
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
-            return jsonify({
-                "status": "success",
-                "message": msg,
-                "symbol": symbol,
-                "should_process": should_process
-            })
-
-        flash(msg)
-        return redirect(url_for('chart_page'))
-    
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
-         return jsonify({"status": "error", "message": "Invalid file type. Please upload a CSV."})
-
-    flash('Invalid file type. Please upload a CSV.')
-    return redirect(url_for('chart_page'))
 
 
-@app.route('/upload-mt5-folder', methods=['POST'])
-@login_required
-def upload_mt5_folder():
-    if 'files' not in request.files:
-        flash('No files part')
-        return redirect(url_for('settings'))
-        
-    files = request.files.getlist('files')
-    if not files or files[0].filename == '':
-        flash('No files selected')
-        return redirect(url_for('settings'))
-
-    # Filter for valid CSVs
-    csv_files = [f for f in files if f.filename.lower().endswith('.csv')]
-    
-    if not csv_files:
-        flash('No CSV files found in the folder.')
-        return redirect(url_for('settings'))
-
-    print(f"📂 [UPLOAD FOLDER] Received {len(csv_files)} CSVs. Analyzing hierarchy...")
-
-    # Group files by Symbol
-    symbol_groups = {}
-    
-    for f in csv_files:
-        raw_path = f.filename.replace('\\', '/')
-        parts = raw_path.split('/')
-        
-        symbol = "UNKNOWN"
-        
-        if len(parts) > 1:
-             possible = parts[-2].upper()
-             if possible.isalnum() or '_' in possible:
-                 symbol = possible
-        
-        if symbol == "UNKNOWN" or symbol.upper() in ["DATA", "QUOTES", "HISTORY"]:
-            basename = secure_filename(parts[-1])
-            if '_' in basename:
-                symbol = basename.split('_')[0].upper()
-        
-        if symbol == "UNKNOWN":
-             continue
-             
-        if symbol not in symbol_groups:
-            symbol_groups[symbol] = []
-        symbol_groups[symbol].append(f)
-    
-    if not symbol_groups:
-        flash('Could not identify any symbols from folder structure. Please use "Symbol/file.csv" structure.')
-        return redirect(url_for('settings'))
-
-    processed_count = 0
-    
-    for symbol, sym_files in symbol_groups.items():
-        best_candidate = None
-        for f in sym_files:
-            if "_M1" in f.filename.upper() or "M1.CSV" in f.filename.upper():
-                best_candidate = f
-                break
-        
-        if not best_candidate: best_candidate = sym_files[0]
-        
-        file = best_candidate
-        filename = secure_filename(file.filename)
-        
-        print(f"🚀 Processing group {symbol} using {filename}")
-
-        symbol_folder = get_symbol_folder(current_user.id, symbol)
-        raw_folder = os.path.join(symbol_folder, 'raw')
-        os.makedirs(raw_folder, exist_ok=True)
-        
-        file_path = os.path.join(raw_folder, 'original.csv')
-        
-        file.seek(0)
-        file.save(file_path)
-        
-        status_path = os.path.join(symbol_folder, 'status.json')
-        meta_path = os.path.join(symbol_folder, 'meta.json')
-        file_hash = hash_file(file_path)
-        
-        should_process = True
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, 'r') as f:
-                    meta = json.load(f)
-                    if meta.get('csv_hash') == file_hash:
-                        should_process = False
-                        with open(status_path, 'w') as sf:
-                            json.dump({"state": "READY"}, sf)
-            except: pass
-
-        if should_process:
-            # Clear abort flag for this user
-            ABORT_PROCESSING[current_user.id] = False
-            thread = threading.Thread(target=background_process_csv, args=(file_path, symbol_folder, symbol, current_user.id))
-            thread.start()
-            
-        processed_count += 1
-    
-    summary = ", ".join(list(symbol_groups.keys())[:3])
-    msg = f'Folder uploaded! Processing {processed_count} symbols ({summary}...)'
-    
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
-        return jsonify({
-            "status": "success",
-            "message": msg,
-            "symbol": list(symbol_groups.keys())[0], # Return the first symbol for status tracking
-            "should_process": True
-        })
-
-    flash(msg)
-    return redirect(url_for('settings'))
 
 
-@app.route('/api/symbol-meta/<symbol>')
-@login_required
-def symbol_meta_api(symbol):
-    # Returns available timeframes for a symbol based on processed data
-    symbol_folder = get_symbol_folder(current_user.id, symbol)
-    meta_path = os.path.join(symbol_folder, 'meta.json')
-    
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, 'r') as f:
-                rich_meta = json.load(f)
-            
-            if 'available_timeframes' not in rich_meta:
-                 processed_base = os.path.join(symbol_folder, 'processed')
-                 if os.path.exists(processed_base):
-                     found_tfs = []
-                     for d in os.listdir(processed_base):
-                         if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES:
-                             found_tfs.append(d)
-                     rich_meta['available_timeframes'] = found_tfs
 
-            return jsonify(rich_meta)
-        except Exception as e:
-            print(f"Error reading meta.json for {symbol}: {e}")
-
-    processed_base = os.path.join(symbol_folder, 'processed')
-    available_timeframes = []
-    
-    if os.path.exists(processed_base):
-        for d in os.listdir(processed_base):
-            if os.path.isdir(os.path.join(processed_base, d)) and d in ALLOWED_TIMEFRAMES:
-                available_timeframes.append(d)
-    
-    tf_order = {tf: i for i, tf in enumerate(ALLOWED_TIMEFRAMES)}
-    available_timeframes.sort(key=lambda x: tf_order.get(x, 999))
-    
-    return jsonify({
-        "symbol": symbol,
-        "base_tf": "M1",
-        "available_timeframes": available_timeframes
-    })
-
-
-@app.route('/api/mt5-data/<symbol>/<timeframe>')
-@login_required
-def get_mt5_timeframe_data(symbol, timeframe):
-    tf_upper = timeframe.upper()
-    print(f"🔥 [API] Request: {symbol} {tf_upper}") 
-    if tf_upper not in ALLOWED_TIMEFRAMES:
-        abort(400, description="Invalid timeframe")
-        
-    symbol_folder = get_symbol_folder(current_user.id, symbol)
-    zone_file = os.path.join(symbol_folder, 'processed', tf_upper, 'zone.json')
-    if not os.path.exists(zone_file):
-        zone_file = os.path.join(symbol_folder, 'processed', tf_upper, 'candles.json')
-    
-    if not os.path.exists(zone_file):
-        abort(404, description="Data not found")
-        
-    with open(zone_file, 'r') as f:
-        data = json.load(f)
-        
-    if isinstance(data, list):
-        data = {"symbol": symbol, "timeframe": tf_upper, "candles": data}
-        
-    from_ts = request.args.get('from', type=int)
-    if from_ts:
-        data['candles'] = [c for c in data['candles'] if c['time'] >= from_ts]
-
-    to_ts = request.args.get('to', type=int)
-    if to_ts:
-        data['candles'] = [c for c in data['candles'] if c['time'] <= to_ts]
-
-    # Limit logic restored for performance (optional)
-    limit = request.args.get('limit', type=int)
-    if limit and limit > 0:
-        if len(data['candles']) > limit:
-            data['candles'] = data['candles'][-limit:]
-
-    print(f"✅ [API] Serving {len(data['candles'])} candles for {symbol} ({tf_upper})")
-    return jsonify(data)
-
-
-@app.route('/api/mt5-status')
-@login_required
-def mt5_status_api():
-    active_symbol = session.get('active_symbol')
-    if not active_symbol:
-        return jsonify({"state": "IDLE"})
-    
-    symbol_folder = get_symbol_folder(current_user.id, active_symbol)
-    status_path = os.path.join(symbol_folder, 'status.json')
-    
-    if os.path.exists(status_path):
-        with open(status_path, 'r') as f:
-            status_data = json.load(f)
-            if 'status' in status_data and 'state' not in status_data:
-                status_data['state'] = status_data.pop('status')
-            return jsonify(status_data)
-            
-    return jsonify({"state": "IDLE"})
-
-
-@app.route('/api/mt5-symbols')
-@login_required
-def get_mt5_symbols():
-    user_base = get_user_mt5_base(current_user.id)
-    if not os.path.exists(user_base):
-        return jsonify({"symbols": []})
-        
-    all_symbols = [d for d in os.listdir(user_base) if os.path.isdir(os.path.join(user_base, d))]
-    valid_symbols = []
-    
-    for s in all_symbols:
-        s_path = os.path.join(user_base, s)
-        # Check for valid data markers
-        if os.path.exists(os.path.join(s_path, 'meta.json')) or \
-           os.path.exists(os.path.join(s_path, 'processed')) or \
-           os.path.exists(os.path.join(s_path, 'status.json')):
-            valid_symbols.append(s)
-            
-    return jsonify({"symbols": sorted(valid_symbols)})
 
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
     # 🔥 Access Check: Journal user only (treat None as journal)
-    if current_user.account_type == 'backtest':
-        return redirect(url_for('chart_page'))
+
 
     trades = Trade.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(Trade.date.asc()).all()
 
@@ -1822,35 +1015,7 @@ def update_account():
     db.session.commit()
     return redirect(url_for('dashboard'))
 
-@app.route('/account/update_mode', methods=['POST'])
-@login_required
-def update_account_mode():
-    new_mode = request.form.get('account_type')
-    if new_mode in ['journal', 'backtest']:
-        current_user.account_type = new_mode
-        db.session.commit()
-        
-        if new_mode == 'backtest':
-            return redirect(url_for('chart_page'))
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('settings'))
 
-
-@app.route('/api/toggle-mode', methods=['POST'])
-@login_required
-def toggle_mode_api():
-    is_on = request.json.get('isOn')
-    new_mode = 'backtest' if is_on else 'journal'
-    mode_label = 'Backtesting' if is_on else 'Trading Journal'
-    
-    current_user.account_type = new_mode
-    db.session.commit()
-    
-    return jsonify({
-        'success': True,
-        'mode': new_mode,
-        'message': f'Switched to {mode_label} Mode'
-    })
 
 
 @app.route('/account/update_goals', methods=['POST'])
@@ -1878,8 +1043,6 @@ def update_goals():
 @login_required
 def new_entry():
     # 🔥 Access Check: Journal user only
-    if current_user.account_type != 'journal':
-        return redirect(url_for('chart_page'))
 
     if request.method == 'POST':
         symbol = request.form.get('symbol').upper()
@@ -1912,13 +1075,18 @@ def new_entry():
                 if file and file.filename != '':
                     allowed_mimetypes = {'image/png', 'image/jpeg', 'image/gif', 'application/pdf', 'video/mp4'}
                     if file.mimetype in allowed_mimetypes:
-                        filename = secure_filename(file.filename)
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_')
-                        saved_filename = timestamp + filename
-                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], saved_filename)
-                        with open(file_path, 'wb') as f:
-                            f.write(file.read())
-                        uploaded_map[file.filename] = 'uploads/' + saved_filename
+                        # Cloudinary Upload with Auto-Compression & Resize
+                        result = cloudinary.uploader.upload(
+                            file,
+                            folder=f"trading_journal/user_{current_user.id}/trades",
+                            public_id=generate_cloudinary_public_id(f"trade_screenshot_{hashlib.md5(file.filename.encode()).hexdigest()[:8]}"),
+                            transformation=[
+                                {"width": 1200, "crop": "limit"},
+                                {"quality": "auto"},
+                                {"fetch_format": "auto"}
+                            ]
+                        )
+                        uploaded_map[file.filename] = result.get("secure_url")
 
         # Apply Order if provided
         screenshot_order = request.form.get('screenshot_order')
@@ -1929,6 +1097,8 @@ def new_entry():
                     if name in uploaded_map:
                         screenshots.append(uploaded_map[name])
                         del uploaded_map[name]
+                    elif name.startswith('http'):
+                        screenshots.append(name)
             except:
                 pass
         
@@ -1936,10 +1106,30 @@ def new_entry():
         for path in uploaded_map.values():
             screenshots.append(path)
         
-        # 2. Handle Image URL
+        # 2. Handle Image URL input field
         screenshot_url = request.form.get('screenshot_url')
         if screenshot_url and screenshot_url.strip():
-            screenshots.append(screenshot_url.strip())
+            target_url = screenshot_url.strip()
+            # TradingView Fix
+            if "tradingview.com/x/" in target_url:
+                parts = target_url.strip('/').split('/')
+                tv_id = parts[-1]
+                if tv_id:
+                    first_char = tv_id[0].lower()
+                    target_url = f"https://s3.tradingview.com/snapshots/{first_char}/{tv_id}.png"
+
+            try:
+                # Cloudinary Upload
+                result = cloudinary.uploader.upload(
+                    target_url,
+                    folder=f"trading_journal/user_{current_user.id}/trades",
+                    public_id=generate_cloudinary_public_id("url_screenshot"),
+                    transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                )
+                screenshots.append(result.get("secure_url"))
+            except Exception as e:
+                print(f"Error uploading URL to Cloudinary in new: {e}")
+                screenshots.append(target_url)
 
         if screenshots:
             screenshot_data = json.dumps(screenshots)
@@ -2002,8 +1192,6 @@ def new_entry():
 @login_required
 def journal():
     # 🔥 Access Check: Journal user only
-    if current_user.account_type != 'journal':
-        return redirect(url_for('chart_page'))
 
     view = request.args.get('view', 'active')
     
@@ -2129,17 +1317,44 @@ def edit_trade(trade_id):
                 if file and file.filename != '':
                     allowed_mimetypes = {'image/png', 'image/jpeg', 'image/gif', 'application/pdf', 'video/mp4'}
                     if file.mimetype in allowed_mimetypes:
-                        filename = secure_filename(file.filename)
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_')
-                        saved_filename = timestamp + filename
-                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], saved_filename)
-                        with open(file_path, 'wb') as f:
-                            f.write(file.read())
-                        # Map original filename to saved path for ordering
-                        new_upload_map[file.filename] = 'uploads/' + saved_filename
+                        # Cloudinary Upload with Auto-Compression & Resize
+                        result = cloudinary.uploader.upload(
+                            file,
+                            folder=f"trading_journal/user_{current_user.id}/trades",
+                            public_id=generate_cloudinary_public_id(f"trade_screenshot_{hashlib.md5(file.filename.encode()).hexdigest()[:8]}"),
+                            transformation=[
+                                {"width": 1200, "crop": "limit"},
+                                {"quality": "auto"},
+                                {"fetch_format": "auto"}
+                            ]
+                        )
+                        # Map original filename to saved URL for ordering
+                        new_upload_map[file.filename] = result.get("secure_url")
         
         screenshot_url = request.form.get('screenshot_url')
-        new_url = screenshot_url.strip() if screenshot_url and screenshot_url.strip() else None
+        new_url = None
+        if screenshot_url and screenshot_url.strip():
+            target_url = screenshot_url.strip()
+            # TradingView Fix
+            if "tradingview.com/x/" in target_url:
+                parts = target_url.strip('/').split('/')
+                tv_id = parts[-1]
+                if tv_id:
+                    first_char = tv_id[0].lower()
+                    target_url = f"https://s3.tradingview.com/snapshots/{first_char}/{tv_id}.png"
+
+            try:
+                # Upload the URL to Cloudinary
+                result = cloudinary.uploader.upload(
+                    target_url,
+                    folder=f"trading_journal/user_{current_user.id}/trades",
+                    public_id=generate_cloudinary_public_id("url_screenshot_edit"),
+                    transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+                )
+                new_url = result.get("secure_url")
+            except Exception as e:
+                print(f"Error uploading URL to Cloudinary in edit: {e}")
+                new_url = target_url
             
         # 3. Final Ordering Logic
         final_screenshots = []
@@ -2155,6 +1370,9 @@ def edit_trade(trade_id):
                     elif item == new_url:
                         final_screenshots.append(item)
                         new_url = None # Used
+                    elif item.startswith('http'):
+                        # This is a newly added Cloudinary URL from the instant "Add to Cloud" button
+                        final_screenshots.append(item)
                 
                 # Append any new uploads NOT in order just in case
                 for key, val in new_upload_map.items():
@@ -2169,6 +1387,14 @@ def edit_trade(trade_id):
             final_screenshots = current_screenshots + list(new_upload_map.values())
             if new_url: final_screenshots.append(new_url)
             
+        final_ids = {get_cloudinary_id(u) for u in final_screenshots if get_cloudinary_id(u)}
+        
+        # Any screenshot that was in current_screenshots but its ID is NOT in final_ids should be deleted
+        for url in current_screenshots:
+            cid = get_cloudinary_id(url)
+            if cid and cid not in final_ids:
+                delete_from_cloudinary(url)
+
         trade.screenshot = json.dumps(final_screenshots) if final_screenshots else None
 
         stop_loss = request.form.get('stop_loss')
@@ -2211,19 +1437,41 @@ def add_trade_url(trade_id):
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
 
-    # Load existing
-    current_screenshots = []
-    if trade.screenshot:
-        try: 
-            current_screenshots = json.loads(trade.screenshot)
-        except: 
-            current_screenshots = [trade.screenshot]
+    target_url = url.strip()
+    # TradingView Fix
+    if "tradingview.com/x/" in target_url:
+        parts = target_url.strip('/').split('/')
+        tv_id = parts[-1]
+        if tv_id:
+            first_char = tv_id[0].lower()
+            target_url = f"https://s3.tradingview.com/snapshots/{first_char}/{tv_id}.png"
 
-    current_screenshots.append(url)
-    trade.screenshot = json.dumps(current_screenshots)
-    
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        # Upload the provided URL to Cloudinary
+        result = cloudinary.uploader.upload(
+            target_url,
+            folder=f"trading_journal/user_{current_user.id}/trade_{trade_id}",
+            public_id=generate_cloudinary_public_id("url_screenshot_quick"),
+            transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
+        )
+        cloud_url = result.get("secure_url")
+        
+        # Load existing
+        current_screenshots = []
+        if trade.screenshot:
+            try: 
+                current_screenshots = json.loads(trade.screenshot)
+            except: 
+                current_screenshots = [trade.screenshot]
+
+        current_screenshots.append(cloud_url)
+        trade.screenshot = json.dumps(current_screenshots)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'url': cloud_url})
+    except Exception as e:
+        print(f"Error in quick URL upload to Cloudinary: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/trade/delete/<int:trade_id>', methods=['POST'])
@@ -2245,6 +1493,15 @@ def delete_trade(trade_id):
 def permanent_delete_trade(trade_id):
     trade = Trade.query.get_or_404(trade_id)
     if trade.user_id == current_user.id and trade.is_deleted:
+        # Cloudinary Cleanup
+        if trade.screenshot:
+            try:
+                screenshots = json.loads(trade.screenshot)
+                for url in screenshots:
+                    delete_from_cloudinary(url)
+            except:
+                pass
+
         db.session.delete(trade)
         db.session.commit()
         if request.headers.get('Content-Type') == 'application/json' or request.args.get('ajax'):
@@ -2367,67 +1624,17 @@ def import_trades():
 @login_required
 def settings():
     goals_row = db.session.execute(text("SELECT profit_target, max_daily_loss FROM risk_settings LIMIT 1")).fetchone()
-    profit_target = goals_row[0] if goals_row else 800.0
-    max_daily_loss = goals_row[1] if goals_row else 500.0
+    p_target = goals_row[0] if goals_row else 800.0
+    m_loss = goals_row[1] if goals_row else 500.0
     
     current_goals = {
-        'profit_target': profit_target,
-        'daily_loss_limit': max_daily_loss
+        "profit_target": p_target,
+        "max_daily_loss": m_loss
     }
-
-    # Fetch MT5 symbols for backtesting mode
-    symbols = []
-    if current_user.account_type == 'backtest':
-        user_folder = get_user_mt5_base(current_user.id)
-        if os.path.exists(user_folder):
-            symbols = [d for d in os.listdir(user_folder) if os.path.isdir(os.path.join(user_folder, d))]
-
-    return render_template('settings.html', goals=current_goals, symbols=symbols)
-
-@app.route('/api/backtest/delete-symbol', methods=['POST'])
-@login_required
-def delete_symbol_api():
-    data = request.json
-    symbol = data.get('symbol')
-    if not symbol:
-        abort(400, description="Symbol is required")
-        
-    symbol_folder = get_symbol_folder(current_user.id, symbol)
-    if os.path.exists(symbol_folder):
-        import shutil
-        shutil.rmtree(symbol_folder)
-        
-        # FIX: If deleted symbol was active, clear it from session
-        if session.get('active_symbol') == symbol:
-            session.pop('active_symbol', None)
-            
-        return jsonify({"status": "success", "message": f"Deleted {symbol}"})
     
-    return jsonify({"status": "error", "message": "Symbol not found"}), 404
+    return render_template('settings.html', goals=current_goals)
 
-@app.route('/api/backtest/clear-all', methods=['POST'])
-@login_required
-def clear_all_data_api():
-    # 1. Set Abort Flag to stop current background processing
-    ABORT_PROCESSING[current_user.id] = True
-    
-    # 2. Clear Session State
-    session.pop('active_symbol', None)
-    session.pop(f'backtest_cursor_{current_user.id}', None)
-    session.pop(f'active_symbol_{current_user.id}', None)
-    
-    # 3. Delete Physical Data
-    user_folder = get_user_mt5_base(current_user.id)
-    if os.path.exists(user_folder):
-        import shutil
-        try:
-            shutil.rmtree(user_folder)
-            os.makedirs(user_folder)
-            return jsonify({"status": "success", "message": "All data wiped successfully"})
-        except Exception as e:
-             return jsonify({"status": "error", "message": f"Wipe failed: {str(e)}"}), 500
-             
-    return jsonify({"status": "success", "message": "No data to clear"})
+
 
 
 @app.route('/export_csv')
@@ -2605,8 +1812,6 @@ def import_csv():
 @login_required
 def analytics():
     # 🔥 Access Check: Journal user only
-    if current_user.account_type != 'journal':
-        return redirect(url_for('chart_page'))
     is_sqlite = 'sqlite' in db.engine.dialect.name
     
     # 1. Daily Breakdown (Table)
@@ -2863,6 +2068,8 @@ def run_migrations():
                 for col, dtype in columns:
                     add_column("trades", f"{col} {dtype}")
 
+
+
                 # User columns
                 user_cols = [
                     ("account_name", "VARCHAR(100) DEFAULT 'My Trading Account'"),
@@ -2916,9 +2123,9 @@ with app.app_context():
         db.create_all()  # Ensure tables exist (Render Postgres needs this!)
         run_migrations() # Add any columns if updating existing DB
         create_admin()   # Ensure admin user
-        print("✅ Database initialized successfully.")
+        print("Database initialized successfully.")
     except Exception as e:
-        print(f"❌ Database initialization failed: {e}")
+        print(f"Database initialization failed: {e}")
 # ---------------------------------------------------------
 
 if __name__ == '__main__':

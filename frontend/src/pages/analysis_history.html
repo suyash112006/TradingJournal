@@ -239,8 +239,8 @@
                             <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Before</p>
                             {% if record.before_image %}
                             <div class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-pointer relative group transition-all duration-300"
-                                onclick="openFullscreen('{{ url_for('static', filename=record.before_image) }}', {{ record.id }}, 'before')">
-                                <img src="{{ url_for('static', filename=record.before_image) }}"
+                                onclick="openFullscreen('{{ record.before_image if (record.before_image.startswith('http') or 'uploads/' in record.before_image) else url_for('static', filename=record.before_image) }}', {{ record.id }}, 'before')">
+                                <img src="{{ record.before_image if (record.before_image.startswith('http') or 'uploads/' in record.before_image) else url_for('static', filename=record.before_image) }}"
                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     alt="Before">
 
@@ -274,8 +274,8 @@
                             <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">After</p>
                             {% if record.after_image %}
                             <div class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-pointer relative group transition-all duration-300"
-                                onclick="openFullscreen('{{ url_for('static', filename=record.after_image) }}', {{ record.id }}, 'after')">
-                                <img src="{{ url_for('static', filename=record.after_image) }}"
+                                onclick="openFullscreen('{{ record.after_image if (record.after_image.startswith('http') or 'uploads/' in record.after_image) else url_for('static', filename=record.after_image) }}', {{ record.id }}, 'after')">
+                                <img src="{{ record.after_image if (record.after_image.startswith('http') or 'uploads/' in record.after_image) else url_for('static', filename=record.after_image) }}"
                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     alt="After">
 

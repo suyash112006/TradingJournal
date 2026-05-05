@@ -152,7 +152,7 @@
                     {% if analysis.before_image %}
                     <div
                         class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden relative group transition-all duration-300">
-                        <img src="{{ url_for('static', filename=analysis.before_image) }}"
+                        <img src="{{ analysis.before_image if (analysis.before_image.startswith('http') or 'uploads/' in analysis.before_image) else url_for('static', filename=analysis.before_image) }}"
                             class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
 
                         <!-- Overlay Actions -->
@@ -160,7 +160,7 @@
                             class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                             <!-- View Fullscreen -->
                             <button type="button"
-                                onclick="openFullscreen('{{ url_for('static', filename=analysis.before_image) }}', {{ analysis.id }}, 'before')"
+                                onclick="openFullscreen('{{ analysis.before_image if (analysis.before_image.startswith('http') or 'uploads/' in analysis.before_image) else url_for('static', filename=analysis.before_image) }}', {{ analysis.id }}, 'before')"
                                 class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white transition-all transform hover:scale-110 shadow-lg"
                                 title="View Fullscreen">
                                 <i data-lucide="maximize-2" class="w-5 h-5"></i>
@@ -211,7 +211,7 @@
                     {% if analysis.after_image %}
                     <div
                         class="feature-image-box aspect-video bg-black/20 rounded-lg border border-white/5 overflow-hidden relative group transition-all duration-300">
-                        <img src="{{ url_for('static', filename=analysis.after_image) }}"
+                        <img src="{{ analysis.after_image if (analysis.after_image.startswith('http') or 'uploads/' in analysis.after_image) else url_for('static', filename=analysis.after_image) }}"
                             class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
 
                         <!-- Overlay Actions -->
@@ -219,7 +219,7 @@
                             class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                             <!-- View Fullscreen -->
                             <button type="button"
-                                onclick="openFullscreen('{{ url_for('static', filename=analysis.after_image) }}', {{ analysis.id }}, 'after')"
+                                onclick="openFullscreen('{{ analysis.after_image if (analysis.after_image.startswith('http') or 'uploads/' in analysis.after_image) else url_for('static', filename=analysis.after_image) }}', {{ analysis.id }}, 'after')"
                                 class="p-3 bg-black/60 backdrop-blur-sm rounded-lg hover:bg-[var(--theme-primary)] hover:text-black text-white transition-all transform hover:scale-110 shadow-lg"
                                 title="View Fullscreen">
                                 <i data-lucide="maximize-2" class="w-5 h-5"></i>

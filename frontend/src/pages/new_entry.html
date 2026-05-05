@@ -449,13 +449,13 @@
             <input type="hidden" name="screenshot_order" id="screenshotOrder">
 
             <div class="flex gap-2 mt-6">
-                <input type="text" id="screenshot_url" name="screenshot_url" class="form-input"
-                    placeholder="Or add image URL">
-                <button type="button"
+                <input type="text" id="screenshot_url" class="form-input"
+                    placeholder="Paste image URL here...">
+                <button type="button" id="addUrlBtn"
                     class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#222] transition-colors"
                     style="white-space: nowrap;"
-                    onclick="const url = document.getElementById('screenshot_url').value; if(url) window.open(url, '_blank'); else alert('Please enter a URL');">
-                    Test
+                    onclick="uploadUrlToCloudinary()">
+                    Add to Cloud
                 </button>
             </div>
         </div>
@@ -731,6 +731,145 @@
                     }
                 });
             });
+
+            // --- Toast Logic ---
+            function showToast(title, message, type = 'success') {
+                const toast = document.getElementById('toast');
+                const toastTitle = document.getElementById('toastTitle');
+                const toastMessage = document.getElementById('toastMessage');
+                const toastIcon = document.getElementById('toastIcon');
+
+                toastTitle.textContent = title;
+                toastMessage.textContent = message;
+
+                if (type === 'error') {
+                    toastIcon.className = "w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center text-red-500";
+                    toastIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+                } else {
+                    toastIcon.className = "w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500";
+                    toastIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                }
+
+                toast.classList.remove('translate-y-24', 'opacity-0');
+
+                setTimeout(() => {
+                    toast.classList.add('translate-y-24', 'opacity-0');
+                }, 3000);
+            }
+
+            // --- Instant Cloudinary Upload for URLs ---
+            async function uploadUrlToCloudinary(urlOverride = null) {
+                const urlInput = document.getElementById('screenshot_url');
+                const url = urlOverride || urlInput.value;
+                const btn = document.getElementById('addUrlBtn');
+
+                if (!url) return;
+
+                const originalText = btn.textContent;
+                btn.textContent = "Uploading...";
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/cloudinary/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        const container = document.getElementById("previewContainer");
+                        const div = document.createElement("div");
+                        div.className = "preview-item";
+                        div.draggable = true;
+                        div.dataset.name = data.url;
+
+                        const img = document.createElement("img");
+                        img.src = data.url;
+                        img.onclick = () => openFullscreen(data.url, img);
+
+                        const removeBtn = document.createElement("div");
+                        removeBtn.className = "remove-btn";
+                        removeBtn.innerHTML = "×";
+                        removeBtn.onclick = (e) => { e.stopPropagation(); div.remove(); updateOrder(); };
+
+                        div.appendChild(img);
+                        div.appendChild(removeBtn);
+                        container.appendChild(div);
+
+                        setupDragEvents(div);
+                        updateOrder();
+
+                        if (!urlOverride) urlInput.value = "";
+                        showToast('Added to Cloud', 'Image saved and optimized');
+                    } else {
+                        showToast('Upload Failed', data.error || 'Check the URL', 'error');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast('Network Error', 'Could not reach server', 'error');
+                } finally {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            }
+
+            // --- Global Paste Listener (Instant Cloudinary) ---
+            document.addEventListener('paste', (e) => {
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+
+                for (let index in items) {
+                    const item = items[index];
+
+                    if (item.kind === 'file' && item.type.includes('image/')) {
+                        const blob = item.getAsFile();
+                        const formData = new FormData();
+                        formData.append('file', blob);
+
+                        showToast('Uploading...', 'Processing pasted image');
+
+                        fetch('/api/cloudinary/upload', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.success) {
+                                const container = document.getElementById("previewContainer");
+                                const div = document.createElement("div");
+                                div.className = "preview-item";
+                                div.draggable = true;
+                                div.dataset.name = data.url;
+
+                                const img = document.createElement("img");
+                                img.src = data.url;
+                                img.onclick = () => openFullscreen(data.url, img);
+
+                                const removeBtn = document.createElement("div");
+                                removeBtn.className = "remove-btn";
+                                removeBtn.innerHTML = "×";
+                                removeBtn.onclick = (e) => { e.stopPropagation(); div.remove(); updateOrder(); };
+
+                                div.appendChild(img);
+                                div.appendChild(removeBtn);
+                                container.appendChild(div);
+                                setupDragEvents(div);
+                                updateOrder();
+                                showToast('Image Saved', 'Pasted image uploaded to cloud');
+                            }
+                        });
+                        return;
+                    }
+
+                    if (item.kind === 'string' && item.type === 'text/plain') {
+                        item.getAsString((text) => {
+                            if (text.match(/\.(jpeg|jpg|gif|png|webp|avif)$/) != null || text.includes('tradingview.com/x/')) {
+                                uploadUrlToCloudinary(text);
+                            }
+                        });
+                    }
+                }
+            });
         </script>
 
         <!-- Form Footer (Left Aligned) -->
@@ -743,6 +882,20 @@
             </a>
         </div>
 
+        <!-- Toast Notification Container -->
+        <div id="toast"
+            class="fixed bottom-6 right-6 px-6 py-4 rounded-xl bg-[#0b0b0f] border border-gray-800 text-white shadow-2xl transform translate-y-24 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+            <div id="toastIcon" class="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </div>
+            <div>
+                <h4 id="toastTitle" class="text-sm font-bold">Success</h4>
+                <p id="toastMessage" class="text-xs text-gray-400">Action completed successfully</p>
+            </div>
+        </div>
     </form>
 </div>
 <script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
