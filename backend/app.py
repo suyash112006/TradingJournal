@@ -649,6 +649,23 @@ login_attempts = {}
 def ping():
     return "pong", 200
 
+@app.route('/db-test')
+def db_test():
+    try:
+        # Check connection
+        db.session.execute(text('SELECT 1'))
+        uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        # Mask password for safety
+        parts = uri.split('@')
+        masked_uri = parts[-1] if len(parts) > 1 else uri
+        return jsonify({
+            "status": "connected",
+            "database": masked_uri,
+            "using_ssl": "sslmode=require" in uri
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/health")
 
 def health():
