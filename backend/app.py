@@ -687,8 +687,12 @@ def index():
         print(f"DEBUG LOGIN: Email={email}, Found={bool(user)}")
         
         if not user:
-            flash("User not found")
+            msg = "User not found"
+            if 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
+                msg += " (Warning: App is using temporary SQLite storage on Vercel. Accounts will be lost between sessions.)"
+            flash(msg)
             return redirect(url_for("index"))
+
 
         if user:
              print(f"DEBUG HASH: {user.password_hash}")
