@@ -661,12 +661,14 @@ def db_test():
             "database": masked_uri,
             "using_ssl": "sslmode=require" in uri
         })
+@app.route('/init-db')
+def init_db():
+    try:
+        with app.app_context():
+            db.create_all()
+            return jsonify({"status": "success", "message": "Database tables created successfully!"})
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "tip": "Check if your password contains special characters like @. If so, they must be encoded as %40."
-        }), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/health")
