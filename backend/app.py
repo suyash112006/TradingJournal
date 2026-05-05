@@ -86,9 +86,11 @@ with app.app_context():
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
         if 'sqlite' in db_uri:
             print(f"WARNING: Using SQLite in a serverless environment (Vercel). Path: {db_uri}")
-        
-        db.create_all()
-        print("INFO: db.create_all() completed.")
+        # Disable automatic creation on Vercel to avoid startup crashes
+        if not os.environ.get("VERCEL"):
+             db.create_all()
+             print("INFO: db.create_all() completed.")
+
         
         # Skip slow inspections on Vercel to speed up cold starts
         if not os.environ.get("VERCEL"):
