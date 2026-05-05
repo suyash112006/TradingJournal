@@ -1,4 +1,11 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Trading Journal Backend"
+dependencies = []
+
 [tool.poetry]
+
 name = "backend"
 version = "0.1.0"
 description = "Trading Journal Backend"
