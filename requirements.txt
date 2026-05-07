@@ -11,4 +11,7 @@ pytz
 flask-bcrypt
 psycopg2-binary
 cloudinary
+Flask-Compress
+Flask-Caching
+cachelib
 
