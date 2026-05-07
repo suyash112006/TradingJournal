@@ -14,6 +14,7 @@ from itsdangerous import URLSafeTimedSerializer
 import json
 import calendar
 import pytz
+from flask_compress import Compress
 import os
 import csv
 import io
@@ -38,6 +39,7 @@ import cloudinary.uploader
 app = Flask(__name__, 
             static_folder='../frontend/src',
             instance_path=os.path.abspath('instance') if not os.environ.get('VERCEL') else '/tmp')
+Compress(app) # Enable Gzip/Brotli compression
 app.config.from_object(Config)
 
 
@@ -100,6 +102,11 @@ bcrypt.init_app(app)
 login_manager = LoginManager()
 login_manager.login_view = 'login'
 login_manager.init_app(app)
+
+# --- CACHING SETUP (High ROI Optimization) ---
+from flask_caching import Cache
+cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+
 
 # --- GLOBAL PERFORMANCE MIDDLEWARE ---
 @app.after_request
@@ -1146,18 +1153,12 @@ def logout():
 
 
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    # 🔥 Access Check: Journal user only (treat None as journal)
-
-
-    active_acc = FundedAccount.query.get(current_user.active_account_id)
-    if not active_acc:
-        return redirect(url_for('settings')) # Fallback
-
-    # 🔥 SENIOR OPTIMIZATION: Shift math to Database (Postgres)
-    # 1. Get Aggregated Stats in ONE query
+@cache.memoize(timeout=300)
+def get_dashboard_data(user_id, account_id):
+    """
+    Memoized data fetcher for dashboard stats.
+    Prevents redundant SQL aggregations during frequent refreshes.
+    """
     stats_query = db.session.query(
         func.count(Trade.id).label('total'),
         func.sum(Trade.pnl).label('net_profit'),
@@ -1166,10 +1167,33 @@ def dashboard():
         func.sum(case(((Trade.pnl > 0), Trade.pnl), else_=0)).label('gross_profit'),
         func.sum(case(((Trade.pnl < 0), func.abs(Trade.pnl)), else_=0)).label('gross_loss')
     ).filter(
-        Trade.user_id == current_user.id,
-        Trade.account_id == active_acc.id,
+        Trade.user_id == user_id,
+        Trade.account_id == account_id,
         Trade.is_deleted == False
     ).first()
+
+    # Optimized Equity Curve Data (SQL-Level Decimation)
+    is_postgres = "postgres" in str(db.engine.url).lower()
+    if is_postgres:
+        sql = text("SELECT date::date as trade_date, SUM(pnl) as daily_pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE GROUP BY 1 ORDER BY 1 ASC")
+    else:
+        sql = text("SELECT date(date) as trade_date, SUM(pnl) as daily_pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE GROUP BY 1 ORDER BY 1 ASC")
+        
+    chart_results = db.session.execute(sql, {"uid": user_id, "aid": account_id}).fetchall()
+    
+    # Calculate today's stats (We don't memoize today's pnl heavily to keep it fresh, 
+    # but we include it in the one-shot fetch for now)
+    return stats_query, chart_results
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    active_acc = FundedAccount.query.get(current_user.active_account_id)
+    if not active_acc:
+        return redirect(url_for('settings'))
+
+    # 🔥 SENIOR OPTIMIZATION: Shift math to Database + Cache
+    stats_query, chart_results = get_dashboard_data(current_user.id, active_acc.id)
 
     total_trades = stats_query.total or 0
     net_profit = float(stats_query.net_profit or 0)
@@ -1179,31 +1203,6 @@ def dashboard():
     
     win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 0)
-
-    # 2. Optimized Equity Curve Data (SQL-Level Decimation)
-    # Aggregating by day reduces 10,000 trades to ~250 points, preventing browser freeze
-    is_postgres = "postgres" in str(db.engine.url).lower()
-    
-    if is_postgres:
-        # Postgres grouping by day
-        chart_sql = text("""
-            SELECT date::date as trade_date, SUM(pnl) as daily_pnl
-            FROM trades
-            WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE
-            GROUP BY 1
-            ORDER BY 1 ASC
-        """)
-    else:
-        # SQLite fallback
-        chart_sql = text("""
-            SELECT date(date) as trade_date, SUM(pnl) as daily_pnl
-            FROM trades
-            WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE
-            GROUP BY 1
-            ORDER BY 1 ASC
-        """)
-        
-    chart_results = db.session.execute(chart_sql, {"uid": current_user.id, "aid": active_acc.id}).fetchall()
 
     equity_labels = ['Start']
     equity_data = [float(active_acc.initial_balance)]
@@ -1609,72 +1608,63 @@ def new_entry():
 @app.route('/journal')
 @login_required
 def journal():
-    # 🔥 Access Check: Journal user only
-
+    # 1. Capture Request Parameters
     view = request.args.get('view', 'active')
-    
-    # Filters
     symbol = request.args.get('symbol')
     direction = request.args.get('direction')
-    tag = None
     date_filter = request.args.get('date')
     emotion_filter = request.args.get('emotion')
     min_rr = request.args.get('min_rr')
-
-    query = Trade.query.filter_by(user_id=current_user.id, account_id=current_user.active_account_id)
     
-    if view == 'trash':
-        query = query.filter_by(is_deleted=True)
-    else:
-        query = query.filter_by(is_deleted=False)
-        
+    # 2. Base Query with Lean Column Projection
+    active_account_id = current_user.active_account_id
+    is_deleted_view = (view == 'trash')
+    
+    query = db.session.query(
+        Trade.id, Trade.date, Trade.symbol, Trade.direction, 
+        Trade.entry_price, Trade.stop_loss, Trade.take_profit, 
+        Trade.pnl, Trade.result, Trade.discipline, Trade.is_deleted, Trade.rr
+    ).filter(
+        Trade.user_id == current_user.id,
+        Trade.account_id == active_account_id,
+        Trade.is_deleted == is_deleted_view
+    )
+
+    # 3. Apply Filters
     if symbol:
-        query = query.filter(Trade.symbol == symbol)
+        query = query.filter(Trade.symbol.ilike(f'%{symbol}%'))
     if direction:
         query = query.filter(Trade.direction == direction)
-    if tag:
-        search = f"%{tag.lower()}%"
-        query = query.filter(Trade.tags.like(search))
-    
+    if emotion_filter:
+        query = query.filter(Trade.emotion == emotion_filter)
+    if min_rr:
+        query = query.filter(Trade.rr >= float(min_rr))
     if date_filter:
-        # Broker day filter: trades where (date + INTERVAL '2 hours')::date == date_filter
         is_sqlite = 'sqlite' in db.engine.dialect.name
         if is_sqlite:
             query = query.filter(text("date(date, '+2 hours') = :d")).params(d=date_filter)
         else:
             query = query.filter(text("(date + INTERVAL '2 hours')::date = :d")).params(d=date_filter)
-    
-    if emotion_filter:
-        query = query.filter(Trade.emotion == emotion_filter)
 
-    if min_rr:
-        query = query.filter(Trade.rr >= float(min_rr))
-
-    # Pagination Configuration
-    PER_PAGE = 15
+    # 4. Pagination Logic
+    PER_PAGE = 20
     page = request.args.get('page', 1, type=int)
+    total_trades = query.count()
+    total_pages = math.ceil(total_trades / PER_PAGE)
     
-    # 1. Total Count (Fast)
-    total_trades_count = query.count()
-    total_pages = math.ceil(total_trades_count / PER_PAGE)
-    
-    # 2. Paginated Data (Efficient Fetch)
+    # Efficient Paginated Fetch
     trades = query.order_by(Trade.date.desc())\
                   .offset((page - 1) * PER_PAGE)\
                   .limit(PER_PAGE)\
                   .all()
-        
-    # NOTE: Auto-cleanup of trash moved to background or manual trigger
-    # to avoid slowing down every journal view request.
-
-
+    
     return render_template('journal.html', 
                          trades=trades, 
-                         view=view, 
-                         date_filter=date_filter,
-                         page=page,
-                         total_pages=total_pages,
-                         total_trades=total_trades_count)
+                         page=page, 
+                         total_pages=total_pages, 
+                         total_trades=total_trades,
+                         view=view,
+                         date_filter=date_filter)
 
 
 
