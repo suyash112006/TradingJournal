@@ -88,49 +88,56 @@ with app.app_context():
              print("INFO: db.create_all() completed.")
 
         
-        # Safe Migration Block - Wrapped to prevent app crash if DB inspection fails
+        # Optimized Migration Block
         try:
-            # Safe Migration Helper
-            def safe_add_column(table_name, column_name, column_type):
-                try:
-                    # Use a fresh engine connection for inspection
-                    inspector = inspect(db.engine)
-                    columns = [c['name'] for c in inspector.get_columns(table_name)]
-                    if column_name not in columns:
-                        # Fix for Postgres compatibility with DATETIME vs TIMESTAMP
-                        actual_type = column_type
-                        if "postgres" in str(db.engine.url).lower() and column_type.upper() == "DATETIME":
-                            actual_type = "TIMESTAMP"
-                            
-                        db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {actual_type}"))
-                        db.session.commit()
-                        print(f"Migration Success: Added column {column_name} to {table_name}")
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"Warning: Migration Error (Adding {column_name} to {table_name}): {e}")
+            inspector = inspect(db.engine)
+            
+            def run_table_migrations(table_name, columns_to_add):
+                existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+                for col_name, col_type in columns_to_add:
+                    if col_name not in existing_columns:
+                        try:
+                            # Postgres compatibility
+                            actual_type = col_type
+                            if "postgres" in str(db.engine.url).lower() and col_type.upper() == "DATETIME":
+                                actual_type = "TIMESTAMP"
+                                
+                            db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {actual_type}"))
+                            db.session.commit()
+                            print(f"Migration Success: Added {col_name} to {table_name}")
+                        except Exception as e:
+                            db.session.rollback()
+                            print(f"Warning: Migration Error on {table_name}.{col_name}: {e}")
 
-            # Run Migrations for missing columns
-            safe_add_column("trades", "duration", "INTEGER")
-            safe_add_column("trades", "rr", "FLOAT")
-            safe_add_column("trades", "emotion", "VARCHAR(50)")
-            safe_add_column("trades", "timeframe", "VARCHAR(20)")
-            safe_add_column("trades", "account_id", "INTEGER")
-            safe_add_column("trades", "is_deleted", "BOOLEAN DEFAULT FALSE")
-            safe_add_column("trades", "deleted_at", "DATETIME")
-            safe_add_column("trades", "tags", "TEXT")
-            safe_add_column("trades", "discipline", "INTEGER")
+            # Define all migrations
+            run_table_migrations("trades", [
+                ("duration", "INTEGER"),
+                ("rr", "FLOAT"),
+                ("emotion", "VARCHAR(50)"),
+                ("timeframe", "VARCHAR(20)"),
+                ("account_id", "INTEGER"),
+                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+                ("deleted_at", "DATETIME"),
+                ("tags", "TEXT"),
+                ("discipline", "INTEGER")
+            ])
             
-            # Users migrations
-            safe_add_column("users", "active_account_id", "INTEGER")
+            run_table_migrations("users", [
+                ("active_account_id", "INTEGER")
+            ])
             
-            # Prop Firms & Funded Accounts migrations
-            safe_add_column("prop_firms", "is_deleted", "BOOLEAN DEFAULT FALSE")
-            safe_add_column("prop_firms", "deleted_at", "DATETIME")
-            safe_add_column("funded_accounts", "is_deleted", "BOOLEAN DEFAULT FALSE")
-            safe_add_column("funded_accounts", "deleted_at", "DATETIME")
-            safe_add_column("funded_accounts", "firm_id", "INTEGER")
+            run_table_migrations("prop_firms", [
+                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+                ("deleted_at", "DATETIME")
+            ])
+            
+            run_table_migrations("funded_accounts", [
+                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+                ("deleted_at", "DATETIME"),
+                ("firm_id", "INTEGER")
+            ])
         except Exception as mig_err:
-            print(f"Migration Block Error (App will still try to start): {mig_err}")
+            print(f"Migration Optimization Block Error: {mig_err}")
 
 
         # Seed RiskSettings if empty (skip on Vercel - tables already initialized)
