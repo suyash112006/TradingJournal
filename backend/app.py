@@ -95,7 +95,12 @@ with app.app_context():
                 inspector = inspect(db.engine)
                 columns = [c['name'] for c in inspector.get_columns(table_name)]
                 if column_name not in columns:
-                    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    # Fix for Postgres compatibility with DATETIME vs TIMESTAMP
+                    actual_type = column_type
+                    if "postgres" in str(db.engine.url).lower() and column_type.upper() == "DATETIME":
+                        actual_type = "TIMESTAMP"
+                        
+                    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {actual_type}"))
                     db.session.commit()
                     print(f"Migration Success: Added column {column_name} to {table_name}")
             except Exception as e:
