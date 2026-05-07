@@ -89,35 +89,34 @@ with app.app_context():
 
         
         # Skip slow inspections on Vercel to speed up cold starts
-        if not os.environ.get("VERCEL"):
-            # Safe Migration Helper
-            def safe_add_column(table_name, column_name, column_type):
-                try:
-                    inspector = inspect(db.engine)
-                    columns = [c['name'] for c in inspector.get_columns(table_name)]
-                    if column_name not in columns:
-                        db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
-                        db.session.commit()
-                        print(f"Migration Success: Added column {column_name} to {table_name}")
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"Warning: Migration Error (Adding {column_name} to {table_name}): {e}")
+        # Safe Migration Helper
+        def safe_add_column(table_name, column_name, column_type):
+            try:
+                inspector = inspect(db.engine)
+                columns = [c['name'] for c in inspector.get_columns(table_name)]
+                if column_name not in columns:
+                    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    db.session.commit()
+                    print(f"Migration Success: Added column {column_name} to {table_name}")
+            except Exception as e:
+                db.session.rollback()
+                print(f"Warning: Migration Error (Adding {column_name} to {table_name}): {e}")
 
-            # Run Migrations for missing columns
-            safe_add_column("trades", "duration", "INTEGER")
-            safe_add_column("trades", "rr", "FLOAT")
-            safe_add_column("trades", "emotion", "VARCHAR(50)")
-            safe_add_column("trades", "timeframe", "VARCHAR(20)")
-            
-            # Users migrations
-            safe_add_column("users", "active_account_id", "INTEGER")
-            
-            # Prop Firms & Funded Accounts migrations
-            safe_add_column("prop_firms", "is_deleted", "BOOLEAN DEFAULT FALSE")
-            safe_add_column("prop_firms", "deleted_at", "DATETIME")
-            safe_add_column("funded_accounts", "is_deleted", "BOOLEAN DEFAULT FALSE")
-            safe_add_column("funded_accounts", "deleted_at", "DATETIME")
-            safe_add_column("funded_accounts", "firm_id", "INTEGER")
+        # Run Migrations for missing columns
+        safe_add_column("trades", "duration", "INTEGER")
+        safe_add_column("trades", "rr", "FLOAT")
+        safe_add_column("trades", "emotion", "VARCHAR(50)")
+        safe_add_column("trades", "timeframe", "VARCHAR(20)")
+        
+        # Users migrations
+        safe_add_column("users", "active_account_id", "INTEGER")
+        
+        # Prop Firms & Funded Accounts migrations
+        safe_add_column("prop_firms", "is_deleted", "BOOLEAN DEFAULT FALSE")
+        safe_add_column("prop_firms", "deleted_at", "DATETIME")
+        safe_add_column("funded_accounts", "is_deleted", "BOOLEAN DEFAULT FALSE")
+        safe_add_column("funded_accounts", "deleted_at", "DATETIME")
+        safe_add_column("funded_accounts", "firm_id", "INTEGER")
 
 
         # Seed RiskSettings if empty (skip on Vercel - tables already initialized)
