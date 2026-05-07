@@ -12,3 +12,6 @@ flask-bcrypt
 psycopg2-binary
 pandas
 cloudinary
+Flask-Compress
+Flask-Caching
+cachelib
