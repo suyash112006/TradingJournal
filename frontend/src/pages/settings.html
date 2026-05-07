@@ -317,7 +317,7 @@
 
                     <!-- Phases List -->
                     <div class="space-y-2">
-                        {% for account in firm.accounts if not account.is_deleted %}
+                        {% for account in firm.sorted_accounts %}
                         <div id="account-row-{{ account.id }}" class="flex items-center justify-between p-4 rounded-xl hover:bg-white/[0.02] transition-all group relative">
                             <div class="flex items-center gap-4">
                                 <div class="w-2 h-2 rounded-full {% if account.id == active_account.id %} bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] {% else %} bg-gray-700 {% endif %}"></div>

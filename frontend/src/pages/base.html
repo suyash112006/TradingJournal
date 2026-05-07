@@ -206,7 +206,7 @@
                         </div>
                         
                         <div id="firm-phases-{{ firm.id }}" class="{{ '' if is_active_firm else 'hidden' }}">
-                            {% for account in firm.accounts if not account.is_deleted %}
+                            {% for account in firm.sorted_accounts %}
                             <a href="{{ url_for('set_active_account', account_id=account.id) }}" 
                                class="flex items-center justify-between px-6 py-3 hover:bg-white/5 transition-colors {{ 'bg-emerald-500/10 border-l-4 border-emerald-500' if account.id == active_account.id else '' }}">
                                 <div class="overflow-hidden flex-1">

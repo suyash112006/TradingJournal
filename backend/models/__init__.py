@@ -53,6 +53,13 @@ class PropFirm(db.Model):
     # Relationship to phases
     accounts = db.relationship('FundedAccount', backref='firm', lazy=True, cascade="all, delete-orphan")
     
+    @property
+    def sorted_accounts(self):
+        # Professional Phase Sequencing
+        priority = {"Phase 1": 1, "Phase 2": 2, "Funded": 3}
+        return sorted([a for a in self.accounts if not a.is_deleted], 
+                      key=lambda x: priority.get(x.phase, 99))
+
     is_deleted = db.Column(db.Boolean, default=False)
     deleted_at = db.Column(db.DateTime)
 
