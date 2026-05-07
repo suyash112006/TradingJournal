@@ -6,7 +6,7 @@
 <style>
     /* Dashboard specific overrides if needed */
     .metric-value {
-        font-family: var(--font-numbers);
+        font-family: var(--font-main);
         font-size: 28px;
         font-weight: 700;
     }
@@ -410,7 +410,7 @@
             {% if goals.emotion_score is not none %}
             {% set emotion_color = 'text-green-400' if goals.emotion_score >= 70 else ('text-yellow-400' if
             goals.emotion_score >= 40 else 'text-red-500') %}
-            <div class="text-5xl font-bold font-mono {{ emotion_color }} mb-2">{{ goals.emotion_score }}%</div>
+            <div class="text-5xl font-bold {{ emotion_color }} mb-2">{{ goals.emotion_score }}%</div>
             <div class="text-sm font-semibold text-gray-200">
                 {{ 'Positive Psychology' if goals.emotion_score >= 40 else 'Needs Improvement' }}
             </div>

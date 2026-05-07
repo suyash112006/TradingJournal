@@ -36,7 +36,7 @@ import cloudinary.uploader
 # ---------------- APP SETUP ----------------
 app = Flask(__name__, 
             static_folder='../frontend/src',
-            instance_path='/tmp')
+            instance_path=os.path.abspath('instance') if not os.environ.get('VERCEL') else '/tmp')
 app.config.from_object(Config)
 
 

@@ -31,7 +31,7 @@
 
     /* Typography */
     --font-main: "Inter", system-ui;
-    --font-numbers: "JetBrains Mono", monospace;
+    --font-numbers: var(--font-main);
 
     /* Global Radius */
     --radius-card: 16px;
