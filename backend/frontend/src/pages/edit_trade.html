@@ -328,10 +328,21 @@
             <div id="previewContainer" class="preview-grid mb-6">
                 {% for src in screenshots %}
                 <div class="preview-item" draggable="true" data-name="{{ src }}">
-                    {% if 'http' in src %}
-                        <img src="{{ src }}" data-original-src="{{ src }}" title="Drag to reorder" onclick="openFullscreen(this.src, this)">
+                    {% if 'res.cloudinary.com' in src %}
+                        {# Optimized Thumbnail for Cloudinary #}
+                        <img src="{{ src.replace('/upload/', '/upload/c_limit,w_400,q_auto,f_auto/') }}" 
+                             loading="lazy"
+                             data-original-src="{{ src }}" 
+                             title="Drag to reorder" 
+                             onclick="openFullscreen(this.dataset.originalSrc)">
+                    {% elif 'http' in src %}
+                        <img src="{{ src }}" loading="lazy" data-original-src="{{ src }}" title="Drag to reorder" onclick="openFullscreen(this.src)">
                     {% else %}
-                        <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) }}" data-original-src="{{ src }}" title="Drag to reorder" onclick="openFullscreen(this.src, this)">
+                        <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) }}" 
+                             loading="lazy"
+                             data-original-src="{{ src }}" 
+                             title="Drag to reorder" 
+                             onclick="openFullscreen(this.src)">
                     {% endif %}
                     <div class="remove-btn" onclick="this.parentElement.remove(); updateOrder();">×</div>
                 </div>

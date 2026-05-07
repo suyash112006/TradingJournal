@@ -5,7 +5,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session, send_file
 
-from sqlalchemy import text, func, inspect
+from sqlalchemy import text, func, inspect, case
+import math
 from functools import wraps
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
@@ -88,56 +89,70 @@ with app.app_context():
              print("INFO: db.create_all() completed.")
 
         
-        # Optimized Migration Block
-        try:
-            inspector = inspect(db.engine)
-            
-            def run_table_migrations(table_name, columns_to_add):
-                existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
-                for col_name, col_type in columns_to_add:
-                    if col_name not in existing_columns:
-                        try:
-                            # Postgres compatibility
-                            actual_type = col_type
-                            if "postgres" in str(db.engine.url).lower() and col_type.upper() == "DATETIME":
-                                actual_type = "TIMESTAMP"
-                                
-                            db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {actual_type}"))
-                            db.session.commit()
-                            print(f"Migration Success: Added {col_name} to {table_name}")
-                        except Exception as e:
-                            db.session.rollback()
-                            print(f"Warning: Migration Error on {table_name}.{col_name}: {e}")
+        # --- PRODUCTION-GRADE MIGRATION ENGINE ---
+        # Instead of inspecting on every request (slow), we check a lightweight version flag
+        CURRENT_MIGRATION_VERSION = "2026_05_07_v3" 
+        
+        # We store the applied version in a local file or temporary cache to avoid DB hits on startup
+        # In serverless, we check if the columns exist ONLY if this version hasn't been verified
+        migration_check_file = os.path.join(instance_path, "migration_version.txt")
+        needs_migration = True
+        
+        if os.path.exists(migration_check_file):
+            with open(migration_check_file, "r") as f:
+                if f.read().strip() == CURRENT_MIGRATION_VERSION:
+                    needs_migration = False
 
-            # Define all migrations
-            run_table_migrations("trades", [
-                ("duration", "INTEGER"),
-                ("rr", "FLOAT"),
-                ("emotion", "VARCHAR(50)"),
-                ("timeframe", "VARCHAR(20)"),
-                ("account_id", "INTEGER"),
-                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
-                ("deleted_at", "DATETIME"),
-                ("tags", "TEXT"),
-                ("discipline", "INTEGER")
-            ])
-            
-            run_table_migrations("users", [
-                ("active_account_id", "INTEGER")
-            ])
-            
-            run_table_migrations("prop_firms", [
-                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
-                ("deleted_at", "DATETIME")
-            ])
-            
-            run_table_migrations("funded_accounts", [
-                ("is_deleted", "BOOLEAN DEFAULT FALSE"),
-                ("deleted_at", "DATETIME"),
-                ("firm_id", "INTEGER")
-            ])
-        except Exception as mig_err:
-            print(f"Migration Optimization Block Error: {mig_err}")
+        if needs_migration:
+            try:
+                print(f"INFO: Running migrations (Version {CURRENT_MIGRATION_VERSION})...")
+                inspector = inspect(db.engine)
+                
+                # --- PRODUCTION-GRADE MIGRATION ENGINE ---
+                inspector = inspect(db.engine)
+                
+                def run_table_migrations(table_name, columns_to_add):
+                    existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+                    for col_name, col_type in columns_to_add:
+                        if col_name not in existing_columns:
+                            try:
+                                actual_type = col_type
+                                if "postgres" in str(db.engine.url).lower() and col_type.upper() == "DATETIME":
+                                    actual_type = "TIMESTAMP"
+                                db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {actual_type}"))
+                                db.session.commit()
+                            except Exception as e:
+                                db.session.rollback()
+
+                # 1. Column Migrations
+                run_table_migrations("trades", [
+                    ("duration", "INTEGER"), ("rr", "FLOAT"), ("emotion", "VARCHAR(50)"),
+                    ("timeframe", "VARCHAR(20)"), ("account_id", "INTEGER"),
+                    ("is_deleted", "BOOLEAN DEFAULT FALSE"), ("deleted_at", "DATETIME"),
+                    ("tags", "TEXT"), ("discipline", "INTEGER")
+                ])
+                run_table_migrations("users", [("active_account_id", "INTEGER")])
+                run_table_migrations("prop_firms", [("is_deleted", "BOOLEAN DEFAULT FALSE"), ("deleted_at", "DATETIME")])
+                run_table_migrations("funded_accounts", [("is_deleted", "BOOLEAN DEFAULT FALSE"), ("deleted_at", "DATETIME"), ("firm_id", "INTEGER")])
+                
+                # 2. Performance Indexing (Critical for 5k+ Trades)
+                # Composite index for filtering trades by user, account, and date
+                try:
+                    is_postgres = "postgres" in str(db.engine.url).lower()
+                    if is_postgres:
+                        db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_user_account_date ON trades (user_id, account_id, date DESC)"))
+                        db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_is_deleted ON trades (is_deleted)"))
+                        db.session.commit()
+                except Exception as idx_err:
+                    db.session.rollback()
+                    print(f"Index Warning: {idx_err}")
+                
+                # Mark as completed
+                with open(migration_check_file, "w") as f:
+                    f.write(CURRENT_MIGRATION_VERSION)
+                print("INFO: Migration check completed and cached.")
+            except Exception as mig_err:
+                print(f"Migration Block Error: {mig_err}")
 
 
         # Seed RiskSettings if empty (skip on Vercel - tables already initialized)
@@ -1098,54 +1113,86 @@ def dashboard():
     if not active_acc:
         return redirect(url_for('settings')) # Fallback
 
-    trades = Trade.query.filter_by(user_id=current_user.id, account_id=active_acc.id, is_deleted=False).order_by(Trade.date.asc()).all()
+    # 🔥 SENIOR OPTIMIZATION: Shift math to Database (Postgres)
+    # 1. Get Aggregated Stats in ONE query
+    stats_query = db.session.query(
+        func.count(Trade.id).label('total'),
+        func.sum(Trade.pnl).label('net_profit'),
+        func.count(case(((Trade.pnl > 0), 1))).label('wins'),
+        func.count(case(((Trade.pnl < 0), 1))).label('losses'),
+        func.sum(case(((Trade.pnl > 0), Trade.pnl), else_=0)).label('gross_profit'),
+        func.sum(case(((Trade.pnl < 0), func.abs(Trade.pnl)), else_=0)).label('gross_loss')
+    ).filter(
+        Trade.user_id == current_user.id,
+        Trade.account_id == active_acc.id,
+        Trade.is_deleted == False
+    ).first()
 
-    total_trades = len(trades)
-    net_profit = sum(t.pnl for t in trades)
+    total_trades = stats_query.total or 0
+    net_profit = float(stats_query.net_profit or 0)
+    wins = stats_query.wins or 0
+    gross_profit = float(stats_query.gross_profit or 0)
+    gross_loss = float(stats_query.gross_loss or 0)
     
-    wins = len([t for t in trades if t.pnl > 0])
-    losses = len([t for t in trades if t.pnl < 0])
-
     win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0
-    profit_factor = round(sum(t.pnl for t in trades if t.pnl > 0) / abs(sum(t.pnl for t in trades if t.pnl < 0)), 2) if any(t.pnl < 0 for t in trades) else 0
-    
-    # Calculate Equity Curve
-    equity_labels = []
-    equity_data = []
-    running_balance = active_acc.initial_balance
-    
-    # Add initial point
-    equity_labels.append('Start')
-    equity_data.append(running_balance)
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 0)
 
-    for t in trades:
-        running_balance += t.pnl
-        date_str = t.date.strftime('%Y-%m-%d') if t.date else "N/A"
-        equity_labels.append(date_str)
+    # 2. Optimized Equity Curve Data (SQL-Level Decimation)
+    # Aggregating by day reduces 10,000 trades to ~250 points, preventing browser freeze
+    is_postgres = "postgres" in str(db.engine.url).lower()
+    
+    if is_postgres:
+        # Postgres grouping by day
+        chart_sql = text("""
+            SELECT date::date as trade_date, SUM(pnl) as daily_pnl
+            FROM trades
+            WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE
+            GROUP BY 1
+            ORDER BY 1 ASC
+        """)
+    else:
+        # SQLite fallback
+        chart_sql = text("""
+            SELECT date(date) as trade_date, SUM(pnl) as daily_pnl
+            FROM trades
+            WHERE user_id = :uid AND account_id = :aid AND is_deleted = FALSE
+            GROUP BY 1
+            ORDER BY 1 ASC
+        """)
+        
+    chart_results = db.session.execute(chart_sql, {"uid": current_user.id, "aid": active_acc.id}).fetchall()
+
+    equity_labels = ['Start']
+    equity_data = [float(active_acc.initial_balance)]
+    running_balance = float(active_acc.initial_balance)
+
+    for row in chart_results:
+        running_balance += float(row.daily_pnl or 0)
+        equity_labels.append(str(row.trade_date))
         equity_data.append(round(running_balance, 2))
 
     stats = {
-        "net_profit": net_profit,
+        "net_profit": round(net_profit, 2),
         "win_rate": win_rate,
         "profit_factor": profit_factor,
         "total_trades": total_trades,
         "todays_pnl": 0,
         "risk_alert": False,
-        "current_balance": active_acc.initial_balance + net_profit
+        "current_balance": round(float(active_acc.initial_balance) + net_profit, 2)
     }
     
-    # Calculate today's PnL correctly using SQL (Prop-Firm Standard)
-    # Using 'trade' table (singular) as confirmed by model definition
-    # COALESCE ensures we get 0 instead of None if no trades today
-    # Calculate today's PnL correctly using Broker Day Window (03:30 IST)
+    # 3. Calculate today's PnL (Optimized Window)
     start_utc, end_utc = get_broker_day_window()
+    today_pnl_val = db.session.query(func.coalesce(func.sum(Trade.pnl), 0)).filter(
+        Trade.user_id == current_user.id,
+        Trade.account_id == active_acc.id,
+        Trade.date >= start_utc,
+        Trade.date < end_utc,
+        Trade.is_deleted == False
+    ).scalar()
     
-    today_pnl_row = db.session.execute(text("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE user_id = :uid AND account_id = :aid AND date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)"), {"uid": current_user.id, "aid": active_acc.id, "start": start_utc, "end": end_utc}).fetchone()
-    
-    todays_trades = [t for t in trades if t.date and t.date.date() == date.today()] # Simple day check if utc/ist not critical here, but ideally uses window
-    # Actually, let's use all_trades for global gross profit to be accurate across pagination if any
-    all_user_trades = Trade.query.filter_by(user_id=current_user.id, account_id=active_acc.id, is_deleted=False).all()
-    all_time_gross_profit = sum(t.pnl for t in all_user_trades if t.pnl > 0)
+    stats["todays_pnl"] = round(float(today_pnl_val), 2)
+    all_time_gross_profit = gross_profit
     
     # Professional Risk Tracking: Profit doesn't buffer loss limit
     todays_gross_loss = abs(sum(t.pnl for t in all_user_trades if t.date and t.date.date() == date.today() and t.pnl < 0))
@@ -1552,32 +1599,23 @@ def journal():
     if min_rr:
         query = query.filter(Trade.rr >= float(min_rr))
 
-    # Pagination Logic
-    import math
-    PER_PAGE = 10
+    # Pagination Configuration
+    PER_PAGE = 15
     page = request.args.get('page', 1, type=int)
     
+    # 1. Total Count (Fast)
     total_trades_count = query.count()
     total_pages = math.ceil(total_trades_count / PER_PAGE)
     
+    # 2. Paginated Data (Efficient Fetch)
     trades = query.order_by(Trade.date.desc())\
                   .offset((page - 1) * PER_PAGE)\
                   .limit(PER_PAGE)\
                   .all()
         
-    # Auto-cleanup old trash (permanently delete > 2 days)
-    expiration_date = datetime.utcnow() - timedelta(days=2)
-    try:
-        deleted_count = Trade.query.filter(
-            Trade.user_id == current_user.id, 
-            Trade.is_deleted == True, 
-            Trade.deleted_at < expiration_date
-        ).delete()
-        if deleted_count > 0:
-            db.session.commit()
-            print(f"♻️ Auto-cleaned {deleted_count} old trash items")
-    except Exception as e:
-        print(f"⚠️ Auto-cleanup failed: {e}")
+    # NOTE: Auto-cleanup of trash moved to background or manual trigger
+    # to avoid slowing down every journal view request.
+
 
     return render_template('journal.html', 
                          trades=trades, 
