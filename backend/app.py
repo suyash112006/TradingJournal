@@ -108,6 +108,16 @@ with app.app_context():
             safe_add_column("trades", "rr", "FLOAT")
             safe_add_column("trades", "emotion", "VARCHAR(50)")
             safe_add_column("trades", "timeframe", "VARCHAR(20)")
+            
+            # Users migrations
+            safe_add_column("users", "active_account_id", "INTEGER")
+            
+            # Prop Firms & Funded Accounts migrations
+            safe_add_column("prop_firms", "is_deleted", "BOOLEAN DEFAULT FALSE")
+            safe_add_column("prop_firms", "deleted_at", "DATETIME")
+            safe_add_column("funded_accounts", "is_deleted", "BOOLEAN DEFAULT FALSE")
+            safe_add_column("funded_accounts", "deleted_at", "DATETIME")
+            safe_add_column("funded_accounts", "firm_id", "INTEGER")
 
 
         # Seed RiskSettings if empty (skip on Vercel - tables already initialized)
