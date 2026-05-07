@@ -114,6 +114,11 @@ with app.app_context():
             safe_add_column("trades", "rr", "FLOAT")
             safe_add_column("trades", "emotion", "VARCHAR(50)")
             safe_add_column("trades", "timeframe", "VARCHAR(20)")
+            safe_add_column("trades", "account_id", "INTEGER")
+            safe_add_column("trades", "is_deleted", "BOOLEAN DEFAULT FALSE")
+            safe_add_column("trades", "deleted_at", "DATETIME")
+            safe_add_column("trades", "tags", "TEXT")
+            safe_add_column("trades", "discipline", "INTEGER")
             
             # Users migrations
             safe_add_column("users", "active_account_id", "INTEGER")
