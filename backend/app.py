@@ -1181,24 +1181,25 @@ def dashboard():
         "current_balance": round(float(active_acc.initial_balance) + net_profit, 2)
     }
     
-    # 3. Calculate today's PnL (Optimized Window)
+    # 3. Calculate today's Stats (Optimized Window)
     start_utc, end_utc = get_broker_day_window()
-    today_pnl_val = db.session.query(func.coalesce(func.sum(Trade.pnl), 0)).filter(
+    today_stats = db.session.query(
+        func.coalesce(func.sum(Trade.pnl), 0).label('pnl'),
+        func.coalesce(func.sum(case(((Trade.pnl < 0), func.abs(Trade.pnl)), else_=0)), 0).label('gross_loss')
+    ).filter(
         Trade.user_id == current_user.id,
         Trade.account_id == active_acc.id,
         Trade.date >= start_utc,
         Trade.date < end_utc,
         Trade.is_deleted == False
-    ).scalar()
+    ).first()
     
-    stats["todays_pnl"] = round(float(today_pnl_val), 2)
+    todays_pnl = float(today_stats.pnl or 0)
+    todays_gross_loss = float(today_stats.gross_loss or 0)
+    
+    stats["todays_pnl"] = round(todays_pnl, 2)
+    stats["todays_gross_loss"] = round(todays_gross_loss, 2)
     all_time_gross_profit = gross_profit
-    
-    # Professional Risk Tracking: Profit doesn't buffer loss limit
-    todays_gross_loss = abs(sum(t.pnl for t in all_user_trades if t.date and t.date.date() == date.today() and t.pnl < 0))
-
-    stats['todays_pnl'] = sum(t.pnl for t in all_user_trades if t.date and t.date.date() == date.today())
-    stats['todays_gross_loss'] = todays_gross_loss
 
     # --- Goals & Limits Logic ---
     goals_row = db.session.execute(text("SELECT profit_target, max_daily_loss FROM risk_settings LIMIT 1")).fetchone()
@@ -1312,10 +1313,17 @@ def dashboard():
             week_days.append(day_info)
         calendar_weeks.append(week_days)
 
+    # 4. Fetch 10 Most Recent Trades for the Activity List
+    recent_trades = Trade.query.filter_by(
+        user_id=current_user.id, 
+        account_id=active_acc.id, 
+        is_deleted=False
+    ).order_by(Trade.date.desc()).limit(10).all()
+
     return render_template('dashboard.html', 
                          base_balance=active_acc.initial_balance,
                          stats=stats, 
-                         trades=trades[::-1][:10], 
+                         trades=recent_trades, 
                          equity_labels=equity_labels, 
                          equity_data=equity_data, 
                          goals=goals,
