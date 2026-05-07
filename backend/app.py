@@ -72,8 +72,51 @@ cloudinary.config(
 # TradingView-style timeframe lockdown (Gold Standard: M1 Backbone Enabled)
 
 
+# --- INFRASTRUCTURE & SCALABILITY CONFIG ---
+from sqlalchemy.pool import NullPool
+
+# Serverless-Optimized Database Engine Configuration
+is_postgres = "postgresql" in str(os.getenv("DATABASE_URL", ""))
+engine_options = {}
+
+if is_postgres:
+    # In Serverless (Vercel), we must NOT pool connections locally. 
+    # We rely on PgBouncer (Transaction Mode) and force NullPool to prevent zombie connections.
+    engine_options = {
+        "poolclass": NullPool,
+        "pool_pre_ping": True,
+    }
+else:
+    # Standard pooling for SQLite (Development)
+    engine_options = {
+        "pool_recycle": 280,
+        "pool_pre_ping": True,
+    }
+
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
 db.init_app(app)
 bcrypt.init_app(app)
+
+login_manager = LoginManager()
+login_manager.login_view = 'login'
+login_manager.init_app(app)
+
+# --- GLOBAL PERFORMANCE MIDDLEWARE ---
+@app.after_request
+def add_header(response):
+    """
+    Production CDN & Browser Caching Strategy:
+    1. Static Assets (JS, CSS, Images) -> Cache for 1 Year (Immutable)
+    2. Dynamic Pages -> No Cache (Fresh Data)
+    """
+    if 'Cache-Control' not in response.headers:
+        if request.path.startswith('/static/'):
+            # Aggressive caching for assets (Chart.js, Lucide, CSS)
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        else:
+            # Prevent sensitive trading data from being cached by intermediaries
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    return response
 
 # --- Database Initialization ---
 print("INFO: Starting database initialization check...")
@@ -2516,8 +2559,41 @@ with app.app_context():
         print(f"Database initialization failed: {e}")
 # ---------------------------------------------------------
 
+@app.route('/api/cloudinary-signature')
+@login_required
+def get_cloudinary_signature():
+    """
+    Generates a secure, time-bound signature for Direct Browser Uploads.
+    This prevents the Flask server from acting as a bottleneck for large images.
+    """
+    import time
+    from cloudinary import utils
+    
+    timestamp = int(time.time())
+    folder = f"tradesync/user_{current_user.id}"
+    
+    params_to_sign = {
+        "timestamp": timestamp,
+        "folder": folder,
+        "upload_preset": "tradesync_presets" # Make sure this is created in Cloudinary dashboard
+    }
+    
+    signature = utils.api_sign_request(
+        params_to_sign, 
+        app.config.get("CLOUDINARY_API_SECRET")
+    )
+    
+    return jsonify({
+        "signature": signature,
+        "timestamp": timestamp,
+        "api_key": app.config.get("CLOUDINARY_API_KEY"),
+        "cloud_name": app.config.get("CLOUDINARY_CLOUD_NAME"),
+        "folder": folder
+    })
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Local development
+    app.run(debug=True, port=5000)
 
 # Trigger reload
 
