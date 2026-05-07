@@ -18,7 +18,7 @@
     --loss: #ef4444;
     --profit-green: #00fa9a;
     --loss-red: #ff3b3b;
-    --accent: #3b82f6;
+    --accent: #00ff99;
     --warning: #f59e0b;
 
     /* Spacing Scale */
@@ -99,14 +99,12 @@ body {
     border: 1px solid var(--border-card);
     border-radius: var(--radius-card);
     padding: var(--space-lg);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
     position: relative;
 }
 
 .metric-card:hover {
-    transform: translateY(-2px);
     border-color: var(--border-hover);
-    background: var(--bg-hover);
 }
 
 .metric-card.profit-glow {
@@ -178,7 +176,7 @@ button,
 button:active,
 .btn:active,
 .day-card:active {
-    transform: scale(0.96);
+    /* Animation disabled */
 }
 
 /* Prop-Firm Calendar */
@@ -225,8 +223,10 @@ button:active,
 
 .day-card {
     aspect-ratio: 1;
-    background: #0d0d10;
-    border: 1px solid var(--border-default);
+    background: rgba(20, 20, 20, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-card);
     padding: 8px;
     position: relative;
@@ -234,11 +234,26 @@ button:active,
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    transition: all 0.2s ease;
 }
 
 .day-card:hover {
-    background: #15151a;
-    border-color: var(--border-hover);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.day-card:active {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.day-card.profit {
+    border: 2px solid var(--profit);
+    box-shadow: 0 0 12px rgba(0, 255, 153, 0.15);
+}
+
+.day-card.loss {
+    border: 2px solid var(--loss);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
 }
 
 .day-card.other-month {
@@ -247,10 +262,11 @@ button:active,
     pointer-events: none;
 }
 
-.day-num {
+.day-num,
+.date {
     font-size: 11px;
     font-weight: 600;
-    color: var(--text-muted);
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .day-pnl {
@@ -699,13 +715,11 @@ button:active,
     /* Exact border: rgba(255, 255, 255, 0.08) */
     border: 1px solid var(--border-card);
     position: relative;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
     border-color: var(--border-hover);
-    background: var(--bg-hover);
 }
 
 .stat-card.highlight {
@@ -757,8 +771,8 @@ button:active,
 }
 
 .form-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--profit);
+    box-shadow: 0 0 0 3px rgba(0, 255, 153, 0.1);
 }
 
 .form-label {

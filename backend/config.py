@@ -2,8 +2,9 @@ import os
 import urllib.parse
 from dotenv import load_dotenv
 
-# Load environment variables from .env file (override existing to prevent conflicts)
-load_dotenv(override=True)
+# Explicitly load .env from the backend directory to prevent path issues
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path=env_path, override=True)
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key")

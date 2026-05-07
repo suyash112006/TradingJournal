@@ -21,6 +21,11 @@ class User(db.Model, UserMixin):
     initial_balance = db.Column(db.Float, default=0.0)
     monthly_goal = db.Column(db.Float, default=1000.0)
     daily_loss_limit = db.Column(db.Float, default=200.0)
+    
+    active_account_id = db.Column(db.Integer) # ID of the currently selected FundedAccount
+
+    # Relationship to accounts
+    accounts = db.relationship('FundedAccount', backref='user', lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -38,10 +43,40 @@ class Task(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     user = db.relationship('User', backref=db.backref('tasks', lazy=True))
 
+class PropFirm(db.Model):
+    __tablename__ = "prop_firms"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to phases
+    accounts = db.relationship('FundedAccount', backref='firm', lazy=True, cascade="all, delete-orphan")
+    
+    is_deleted = db.Column(db.Boolean, default=False)
+    deleted_at = db.Column(db.DateTime)
+
+class FundedAccount(db.Model):
+    __tablename__ = "funded_accounts"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    firm_id = db.Column(db.Integer, db.ForeignKey('prop_firms.id'), nullable=True) # Initially nullable for migration
+    name = db.Column(db.String(100), nullable=False)
+    phase = db.Column(db.String(50), default="Funded")
+    initial_balance = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to trades
+    trades = db.relationship('Trade', backref='funded_account', lazy=True, cascade="all, delete-orphan")
+    
+    is_deleted = db.Column(db.Boolean, default=False)
+    deleted_at = db.Column(db.DateTime)
+
 class Trade(db.Model):
     __tablename__ = "trades"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    account_id = db.Column(db.Integer, db.ForeignKey('funded_accounts.id'), nullable=True) # Linked to a specific funded account
 
     symbol = db.Column(db.String(20), nullable=False)
     direction = db.Column(db.String(10), nullable=False)

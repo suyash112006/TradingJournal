@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 
 {% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/layout.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/components.css') }}">
 <style>
     /* Discipline Rating */
     .discipline-box {
@@ -17,7 +21,7 @@
     .discipline-row {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 16px;
     }
 
     /* Stars base */
@@ -33,32 +37,12 @@
     }
 
     /* Color levels */
-    .stars.level-1 .active {
-        color: #ff3d00;
-        text-shadow: 0 0 8px rgba(255, 61, 0, 0.6);
-    }
+    .stars.level-1 .active { color: #ff3d00; text-shadow: 0 0 8px rgba(255, 61, 0, 0.6); }
+    .stars.level-2 .active { color: #ff9800; text-shadow: 0 0 8px rgba(255, 152, 0, 0.6); }
+    .stars.level-3 .active { color: #f5c518; text-shadow: 0 0 8px rgba(245, 197, 24, 0.6); }
+    .stars.level-4 .active { color: #8bc34a; text-shadow: 0 0 8px rgba(139, 195, 74, 0.6); }
+    .stars.level-5 .active { color: #00e676; text-shadow: 0 0 10px rgba(0, 230, 118, 0.7); }
 
-    .stars.level-2 .active {
-        color: #ff9800;
-        text-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
-    }
-
-    .stars.level-3 .active {
-        color: #f5c518;
-        text-shadow: 0 0 8px rgba(245, 197, 24, 0.6);
-    }
-
-    .stars.level-4 .active {
-        color: #8bc34a;
-        text-shadow: 0 0 8px rgba(139, 195, 74, 0.6);
-    }
-
-    .stars.level-5 .active {
-        color: #00e676;
-        text-shadow: 0 0 10px rgba(0, 230, 118, 0.7);
-    }
-
-    /* Result text */
     .discipline-result {
         font-size: 0.85rem;
         font-weight: 600;
@@ -84,15 +68,8 @@
         transition: transform 0.2s ease, border-color 0.2s ease;
     }
 
-    .preview-item:hover {
-        border-color: #3b82f6;
-    }
-
-    .preview-item.dragging {
-        opacity: 0.5;
-        border: 2px dashed #3b82f6;
-        cursor: grabbing;
-    }
+    .preview-item:hover { border-color: #3b82f6; }
+    .preview-item.dragging { opacity: 0.5; border: 2px dashed #3b82f6; cursor: grabbing; }
 
     .preview-item img {
         width: 100%;
@@ -118,11 +95,24 @@
         transition: opacity 0.2s;
     }
 
-    .preview-item:hover .remove-btn {
-        opacity: 1;
-    }
+    .preview-item:hover .remove-btn { opacity: 1; }
 
-    /* RR card — SAME AS INPUT */
+    /* Form Normalization */
+    .form-stack { display: flex; flex-direction: column; gap: 20px; }
+    .form-input {
+        width: 100%;
+        background: #0b0b0f;
+        border: 1px solid #1f2937;
+        color: white;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 0.875rem;
+        outline: none;
+        transition: border-color 0.2s ease;
+    }
+    .form-input:focus { border-color: var(--theme-primary); }
+    .form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
     .rr-card {
         height: 48px;
         padding: 0 16px;
@@ -135,7 +125,6 @@
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
-    /* RR Value Styling */
     .rr-value {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 1rem;
@@ -144,167 +133,155 @@
         letter-spacing: 0.04em;
     }
 
-    /* Consistent Focus Highlight for Edit Trade */
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-        border-color: var(--theme-primary) !important;
-        box-shadow: 0 0 15px rgba(0, 255, 157, 0.2) !important;
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+        opacity: 0.5;
+        cursor: pointer;
+    }
+
+    /* Transparent Glass Card */
+    .entry-card {
+        background: rgba(11, 11, 15, 0.4);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Custom Select */
+    .custom-select-wrapper { position: relative; }
+    .custom-select-btn { cursor: pointer; user-select: none; }
+    .custom-select-btn:focus { outline: none; border-color: var(--theme-primary); }
+    .custom-select-dropdown { animation: dropIn 0.15s ease; }
+    .custom-select-option.selected { background: rgba(0, 255, 153, 0.05); }
+
+    @keyframes dropIn {
+        from { opacity: 0; transform: translateY(-6px); }
+        to   { opacity: 1; transform: translateY(0); }
     }
 </style>
 {% endblock %}
-
 
 {% block content %}
 <header class="page-header mb-8">
     <h1 class="page-title">Edit Trade</h1>
 </header>
 
-<div class="table-container p-8" style="max-width: 900px;">
+<div class="entry-card p-8" style="max-width: 900px;">
     <form method="POST" action="{{ url_for('edit_trade', trade_id=trade.id) }}" enctype="multipart/form-data">
         <div class="grid grid-cols-2 gap-6 mb-6">
 
             <!-- Col 1 -->
-            <div class="space-y-5">
+            <div class="form-stack">
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Pair</label>
-                    <input type="text" name="symbol"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
-                        placeholder="e.g. BTC/USD" value="{{ trade.symbol }}" required>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Pair</label>
+                    <input type="text" name="symbol" class="form-input mono" placeholder="e.g. BTC/USD" value="{{ trade.symbol }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trading
-                        Session</label>
-                    <div class="relative">
-                        <select name="session"
-                            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
-                            <option value="" disabled>Select Session</option>
-                            <option value="Asian" {% if trade.session=='Asian' %}selected{% endif %}>Asian</option>
-                            <option value="London" {% if trade.session=='London' %}selected{% endif %}>London</option>
-                            <option value="New York" {% if trade.session=='New York' %}selected{% endif %}>New York
-                            </option>
-                            <option value="Other" {% if trade.session=='Other' %}selected{% endif %}>Other</option>
-                        </select>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Trading Session</label>
+                    <div class="custom-select-wrapper" data-form-name="session">
+                        <input type="hidden" name="session" value="{{ trade.session or '' }}" class="custom-select-hidden">
+                        <button type="button" class="custom-select-btn form-input h-[48px] flex items-center justify-start px-4 gap-2 relative">
+                            <span class="custom-select-label font-bold text-gray-400 uppercase tracking-widest text-[11px]">{{ trade.session or 'Select Session' }}</span>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 transition-transform absolute right-4"></i>
+                        </button>
+                        <div class="custom-select-dropdown hidden absolute z-[999] mt-1 w-full bg-[#0a0a0c] border border-white/10 rounded-xl overflow-hidden shadow-2xl shadow-black/95 backdrop-blur-2xl">
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-blue-500/10 cursor-pointer transition-colors text-blue-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-blue-500/30" data-value="Asian">Asian</div>
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-purple-500/10 cursor-pointer transition-colors border-t border-white/5 text-purple-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-purple-500/30" data-value="London">London</div>
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-amber-500/10 cursor-pointer transition-colors border-t border-white/5 text-amber-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-amber-500/30" data-value="New York">New York</div>
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-gray-500/10 cursor-pointer transition-colors border-t border-white/5 text-gray-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-gray-500/30" data-value="Other">Other</div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Date
-                        Executed</label>
-                    <input type="datetime-local" name="date"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
-                        value="{{ trade.date.strftime('%Y-%m-%dT%H:%M') }}">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Date Executed</label>
+                    <input type="datetime-local" name="date" class="form-input" value="{{ trade.date.strftime('%Y-%m-%dT%H:%M') }}">
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Duration
-                        (Minutes)</label>
-                    <input type="number" step="any" name="duration"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
-                        placeholder="e.g. 45" value="{{ (trade.duration / 60)|round(2) if trade.duration else '' }}">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Duration (Minutes)</label>
+                    <input type="number" step="any" name="duration" class="form-input" placeholder="e.g. 45" value="{{ (trade.duration / 60)|round(2) if trade.duration else '' }}">
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Direction</label>
-                    <div class="relative">
-                        <select name="direction"
-                            class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
-                            <option value="Long" {% if trade.direction=='Long' %}selected{% endif %}>Long</option>
-                            <option value="Short" {% if trade.direction=='Short' %}selected{% endif %}>Short</option>
-                        </select>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Direction</label>
+                    <div class="custom-select-wrapper" data-form-name="direction">
+                        <input type="hidden" name="direction" value="{{ trade.direction }}" class="custom-select-hidden">
+                        <button type="button" class="custom-select-btn form-input h-[48px] flex items-center justify-start px-4 gap-2 relative">
+                            <span class="custom-select-label font-bold text-gray-400 uppercase tracking-widest text-[11px]">{{ trade.direction }}</span>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 transition-transform absolute right-4"></i>
+                        </button>
+                        <div class="custom-select-dropdown hidden absolute z-[999] mt-1 w-full bg-[#0a0a0c] border border-white/10 rounded-xl overflow-hidden shadow-2xl shadow-black/95 backdrop-blur-2xl">
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-emerald-500/10 cursor-pointer transition-colors text-emerald-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-emerald-500/30 {% if trade.direction == 'Long' %}selected{% endif %}" data-value="Long">Long</div>
+                            <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-red-500/10 cursor-pointer transition-colors border-t border-white/5 text-red-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-red-500/30 {% if trade.direction == 'Short' %}selected{% endif %}" data-value="Short">Short</div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Setup /
-                        Strategy</label>
-                    <input type="text" name="strategy"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
-                        placeholder="e.g. Breakout" value="{{ trade.strategy or '' }}">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Strategy</label>
+                    <input type="text" name="strategy" class="form-input" placeholder="e.g. Breakout" value="{{ trade.strategy or '' }}">
                 </div>
-
-
-
-
-
             </div>
 
             <!-- Col 2 -->
-            <div class="space-y-5">
+            <div class="form-stack">
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Entry
-                        Price</label>
-                    <input type="number" step="any" name="entry_price"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
-                        placeholder="0.00" value="{{ trade.entry_price }}" required>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Entry Price</label>
+                    <input type="number" step="any" name="entry_price" class="form-input mono" placeholder="0.00" value="{{ trade.entry_price }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Stop Loss</label>
-                    <input type="number" step="any" name="stop_loss"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
-                        placeholder="0.00" value="{{ trade.stop_loss or '' }}">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Stop Loss</label>
+                    <input type="number" step="any" name="stop_loss" class="form-input mono" placeholder="0.00" value="{{ trade.stop_loss or '' }}">
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Take
-                        Profit</label>
-                    <input type="number" step="any" name="take_profit" id="takeProfitInput"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
-                        placeholder="0.00" value="{{ trade.take_profit or '' }}">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Take Profit</label>
+                    <input type="number" step="any" name="take_profit" id="takeProfitInput" class="form-input mono" placeholder="0.00" value="{{ trade.take_profit or '' }}">
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Realized
-                        P&L</label>
-                    <input type="number" step="any" name="pnl"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
-                        placeholder="0.00" value="{{ trade.pnl }}" required>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Realized P&L</label>
+                    <input type="number" step="any" name="pnl" class="form-input mono" placeholder="0.00" value="{{ trade.pnl }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Quantity /
-                        Size</label>
-                    <input type="number" step="any" name="quantity"
-                        class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all font-mono"
-                        placeholder="1.0" value="{{ trade.quantity }}">
-                    <small class="text-gray-600 text-[10px] mt-1 block uppercase tracking-tighter">Impacts account
-                        growth calculation</small>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-500">Quantity / Size</label>
+                    <input type="number" step="any" name="quantity" class="form-input mono" placeholder="1.0" value="{{ trade.quantity }}">
                 </div>
-
-
             </div>
         </div>
 
-
-
-
         <!-- Psychology Section (Full Width) -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Emotion + Discipline (SAME COLUMN) -->
+
+            <!-- Emotion + Discipline (LEFT COLUMN) -->
             <div class="form-group">
                 <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
                     Emotion / Mindset
                 </label>
 
-                <select name="emotion"
-                    class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none h-[48px] appearance-none cursor-pointer">
-                    <option value="Neutral" {% if trade.emotion=='Neutral' %}selected{% endif %}>Neutral
-                    </option>
-                    <option value="Greedy" {% if trade.emotion=='Greedy' %}selected{% endif %}>Greedy</option>
-                    <option value="Fearful" {% if trade.emotion=='Fearful' %}selected{% endif %}>Fearful
-                    </option>
-                    <option value="Patient" {% if trade.emotion=='Patient' %}selected{% endif %}>Patient
-                    </option>
-                    <option value="Disciplined" {% if trade.emotion=='Disciplined' %}selected{% endif %}>
-                        Disciplined</option>
-                    <option value="Impulsive" {% if trade.emotion=='Impulsive' %}selected{% endif %}>Impulsive
-                    </option>
-                </select>
+                <div class="custom-select-wrapper" data-form-name="emotion">
+                    <input type="hidden" name="emotion" value="{{ trade.emotion or 'Neutral' }}" class="custom-select-hidden">
+                    <button type="button" class="custom-select-btn form-input h-[48px] flex items-center justify-start px-4 gap-2 relative">
+                        <span class="custom-select-label font-bold text-gray-400 uppercase tracking-widest text-[11px]">{{ trade.emotion or 'Neutral' }}</span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 transition-transform absolute right-4"></i>
+                    </button>
+                    <div class="custom-select-dropdown hidden absolute z-[999] mt-1 w-full bg-[#0a0a0c] border border-white/10 rounded-xl overflow-hidden shadow-2xl shadow-black/95 backdrop-blur-2xl">
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-gray-500/10 cursor-pointer transition-colors text-gray-300 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-gray-500/30" data-value="Neutral">Neutral</div>
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-red-500/10 cursor-pointer transition-colors border-t border-white/5 text-red-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-red-500/30" data-value="Greedy">Greedy</div>
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-blue-500/10 cursor-pointer transition-colors border-t border-white/5 text-blue-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-blue-500/30" data-value="Fearful">Fearful</div>
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-green-500/10 cursor-pointer transition-colors border-t border-white/5 text-green-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-green-500/30" data-value="Patient">Patient</div>
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-emerald-500/10 cursor-pointer transition-colors border-t border-white/5 text-emerald-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-emerald-500/30" data-value="Disciplined">Disciplined</div>
+                        <div class="custom-select-option p-4 flex items-center justify-start px-4 hover:bg-amber-500/10 cursor-pointer transition-colors border-t border-white/5 text-amber-400 font-bold uppercase tracking-widest text-[11px] bg-[#0d0d12] border-l-4 border-amber-500/30" data-value="Impulsive">Impulsive</div>
+                    </div>
+                </div>
 
-                <!-- Discipline Rating (MOVED HERE) -->
-                <!-- Discipline Rating (MOVED HERE) -->
+                <!-- Discipline Rating -->
                 <div class="discipline-box mt-4">
                     <label class="discipline-title">Discipline Rating</label>
 
@@ -322,53 +299,39 @@
                         </div>
                     </div>
 
-                    <!-- Hidden input for Flask -->
+                    <!-- Hidden input -->
                     <input type="hidden" name="discipline" id="disciplineInput" value="{{ trade.discipline or '' }}">
                 </div>
             </div>
 
-            <!-- Right column: Risk : Reward (Moved Here) -->
+            <!-- Risk : Reward (RIGHT COLUMN) -->
             <div class="form-group">
-                <!-- Invisible label to force alignment -->
+                <!-- Invisible label to force alignment with the left column -->
                 <label class="block text-xs font-bold uppercase tracking-wider text-transparent mb-2 select-none">
                     Risk : Reward
                 </label>
-                <div id="rrDisplay" class="hidden rr-card w-full justify-between"
-                    title="Calculated using Entry, Stop & Take Profit">
+                <div id="rrDisplay" class="hidden rr-card w-full justify-between">
                     <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Risk : Reward</span>
-                    <div class="text-right">
-                        <span id="rrValue" class="rr-value"></span>
-                    </div>
+                    <span id="rrValue" class="rr-value">1:0.00</span>
                 </div>
             </div>
+
         </div>
 
         <div class="form-group mb-6">
-            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trade Notes &
-                Analysis</label>
-            <textarea name="notes"
-                class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all h-32"
-                placeholder="Why did you take this trade? How did you feel?">{{ trade.notes or '' }}</textarea>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Trade Notes & Analysis</label>
+            <textarea name="notes" class="form-input h-32" placeholder="Why did you take this trade?">{{ trade.notes or '' }}</textarea>
         </div>
 
         <div class="form-group mb-8">
-            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Screenshots &
-                Media</label>
-
-            <!-- Multi-Image Preview Container (Existing + New) -->
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Screenshots & Media</label>
             <div id="previewContainer" class="preview-grid mb-6">
                 {% for src in screenshots %}
                 <div class="preview-item" draggable="true" data-name="{{ src }}">
                     {% if 'http' in src %}
-                        <img src="{{ src }}" 
-                             data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
-                             onclick="openFullscreen(this.src, this)"
-                             onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
+                        <img src="{{ src }}" data-original-src="{{ src }}" title="Drag to reorder" onclick="openFullscreen(this.src, this)">
                     {% else %}
-                        <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) }}"
-                             data-original-src="{{ src }}" title="Drag to reorder | Click to enlarge"
-                             onclick="openFullscreen(this.src, this)"
-                             onerror="this.onerror=null; this.src='https://cdn-icons-png.flaticon.com/512/2748/2748558.png'; this.classList.add('broken-link'); this.style.padding='20px'; this.style.objectFit='contain';">
+                        <img src="{{ url_for('serve_file', filename=src|replace('uploads/', '')) }}" data-original-src="{{ src }}" title="Drag to reorder" onclick="openFullscreen(this.src, this)">
                     {% endif %}
                     <div class="remove-btn" onclick="this.parentElement.remove(); updateOrder();">×</div>
                 </div>
@@ -380,19 +343,15 @@
                 <div class="text-center">
                     <i data-lucide="upload-cloud"
                         class="w-8 h-8 text-gray-600 group-hover:text-[var(--profit)] mb-2 inline-block transition-colors"></i>
-                    <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Add new files or drag & drop
-                    </p>
+                    <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Select files or drag & drop</p>
                 </div>
                 <input type="file" id="screenshotFile" name="screenshot" class="hidden" accept="image/*" multiple
                     onchange="handleMultipleFiles(this)">
             </div>
-
-            <!-- Hidden Order Persistence -->
             <input type="hidden" name="screenshot_order" id="screenshotOrder">
 
             <div class="flex gap-2 mt-6">
-                <input type="text" id="screenshot_url" 
-                    class="w-full bg-[#0b0b0f] border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:border-gray-600 outline-none transition-all"
+                <input type="text" id="screenshot_url" class="form-input"
                     placeholder="Paste image URL here...">
                 <button type="button" id="addUrlBtn"
                     class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#222] transition-colors"
@@ -412,45 +371,33 @@
                 Cancel
             </a>
         </div>
-
     </form>
 </div>
 
-<!-- Toast Notification Container -->
-<div id="toast"
-    class="fixed bottom-6 right-6 px-6 py-4 rounded-xl bg-[#0b0b0f] border border-gray-800 text-white shadow-2xl transform translate-y-24 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
-    <div id="toastIcon" class="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-    </div>
+<!-- Toast Notification -->
+<div id="toast" class="fixed bottom-6 right-6 px-6 py-4 rounded-xl bg-[#0b0b0f] border border-gray-800 text-white shadow-2xl transform translate-y-24 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+    <div id="toastIcon" class="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-500"></div>
     <div>
         <h4 id="toastTitle" class="text-sm font-bold">Success</h4>
-        <p id="toastMessage" class="text-xs text-gray-400">Action completed successfully</p>
+        <p id="toastMessage" class="text-xs text-gray-400"></p>
     </div>
 </div>
 
 <script>
-    // --- Rating Stars Logic ---
+    // Star Logic
     const stars = document.querySelectorAll("#disciplineStars span");
     const starsContainer = document.getElementById("disciplineStars");
     const result = document.getElementById("disciplineResult");
     const input = document.getElementById("disciplineInput");
-
-    const labels = {
-        1: "Very Poor", 2: "Poor", 3: "Average", 4: "Very Good", 5: "Excellent"
-    };
-    const colors = {
-        1: "#ff3d00", 2: "#ff9800", 3: "#f5c518", 4: "#8bc34a", 5: "#00e676"
-    };
+    const labels = { 1: "Very Poor", 2: "Poor", 3: "Average", 4: "Very Good", 5: "Excellent" };
+    const colors = { 1: "#ff3d00", 2: "#ff9800", 3: "#f5c518", 4: "#8bc34a", 5: "#00e676" };
 
     function highlightStars(value) {
         stars.forEach(star => star.classList.toggle("active", star.dataset.value <= value));
         if (starsContainer) starsContainer.className = "stars level-" + value;
     }
 
-    if (input && input.value) {
+    if (input.value) {
         highlightStars(input.value);
         result.textContent = labels[input.value];
         result.style.color = colors[input.value];
@@ -460,99 +407,36 @@
         star.addEventListener("mouseover", () => highlightStars(star.dataset.value));
         star.addEventListener("mouseout", () => highlightStars(input.value || 0));
         star.addEventListener("click", () => {
-            const val = star.dataset.value;
-            input.value = val;
-            highlightStars(val);
-            result.textContent = labels[val];
-            result.style.color = colors[val];
+            input.value = star.dataset.value;
+            highlightStars(input.value);
+            result.textContent = labels[input.value];
+            result.style.color = colors[input.value];
         });
     });
 
-    // --- Multi-Image & Cloudinary Logic ---
-    let draggedItem = null;
-
-    function openFullscreen(src, imgElement) {
+    // Fullscreen Preview
+    function openFullscreen(src) {
         const modal = document.createElement("div");
-        modal.className = "fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in";
+        modal.className = "fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out";
         modal.onclick = () => modal.remove();
-
         const img = document.createElement("img");
         img.src = src;
-        img.className = "max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-zoom-in";
-        
+        img.className = "max-w-full max-h-full object-contain rounded-lg";
         modal.appendChild(img);
         document.body.appendChild(modal);
     }
 
-    function handleMultipleFiles(input) {
-        const files = Array.from(input.files);
-        const container = document.getElementById("previewContainer");
-
-        files.forEach(file => {
-            if (!file.type.startsWith("image/")) return;
-            const reader = new FileReader();
-            reader.onload = e => {
-                addPreviewToUI(e.target.result, file.name);
-            };
-            reader.readAsDataURL(file);
-        });
-    }
-
-    function addPreviewToUI(src, identifier) {
-        const container = document.getElementById("previewContainer");
-        const div = document.createElement("div");
-        div.className = "preview-item";
-        div.draggable = true;
-        div.dataset.name = identifier;
-
-        const img = document.createElement("img");
-        img.src = src;
-        img.title = "Drag to reorder | Click to enlarge";
-        img.onclick = () => openFullscreen(src, img);
-        img.onerror = () => {
-            img.src = 'https://cdn-icons-png.flaticon.com/512/2748/2748558.png';
-            img.classList.add('broken-link');
-            img.style.padding = '20px';
-        };
-
-        const removeBtn = document.createElement("div");
-        removeBtn.className = "remove-btn";
-        removeBtn.innerHTML = "×";
-        removeBtn.onclick = (e) => {
-            e.stopPropagation();
-            div.remove();
-            updateOrder();
-        };
-
-        div.appendChild(img);
-        div.appendChild(removeBtn);
-        container.appendChild(div);
-
-        setupDragEvents(div);
-        updateOrder();
-    }
-
+    // Multi-Image Reorder
+    let draggedItem = null;
     function setupDragEvents(item) {
-        item.addEventListener("dragstart", () => {
-            draggedItem = item;
-            item.classList.add("dragging");
-        });
-
-        item.addEventListener("dragend", () => {
-            draggedItem = null;
-            item.classList.remove("dragging");
-            updateOrder();
-        });
-
+        item.addEventListener("dragstart", () => { draggedItem = item; item.classList.add("dragging"); });
+        item.addEventListener("dragend", () => { draggedItem = null; item.classList.remove("dragging"); updateOrder(); });
         const container = document.getElementById("previewContainer");
         container.addEventListener("dragover", e => {
             e.preventDefault();
             const afterElement = getDragAfterElement(container, e.clientX);
-            if (afterElement == null) {
-                container.appendChild(draggedItem);
-            } else {
-                container.insertBefore(draggedItem, afterElement);
-            }
+            if (!afterElement) container.appendChild(draggedItem);
+            else container.insertBefore(draggedItem, afterElement);
         });
     }
 
@@ -561,17 +445,190 @@
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
             const offset = x - box.left - box.width / 2;
-            if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
+            if (offset < 0 && offset > closest.offset) return { offset, element: child };
             return closest;
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
     function updateOrder() {
         const order = [...document.querySelectorAll(".preview-item")].map(el => el.dataset.name);
-        const orderInput = document.getElementById("screenshotOrder");
-        if (orderInput) orderInput.value = JSON.stringify(order);
+        document.getElementById("screenshotOrder").value = JSON.stringify(order);
     }
 
+    function handleMultipleFiles(input) {
+        Array.from(input.files).forEach(file => {
+            if (!file.type.startsWith("image/")) return;
+            const reader = new FileReader();
+            reader.onload = e => addPreviewToUI(e.target.result, file.name);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function addPreviewToUI(src, identifier) {
+        const div = document.createElement("div");
+        div.className = "preview-item"; div.draggable = true; div.dataset.name = identifier;
+        const img = document.createElement("img"); img.src = src; img.onclick = () => openFullscreen(src);
+        const remove = document.createElement("div"); remove.className = "remove-btn"; remove.innerHTML = "×";
+        remove.onclick = () => { div.remove(); updateOrder(); };
+        div.appendChild(img); div.appendChild(remove);
+        document.getElementById("previewContainer").appendChild(div);
+        setupDragEvents(div); updateOrder();
+    }
+
+    document.querySelectorAll(".preview-item").forEach(setupDragEvents);
+    updateOrder();
+
+    // R:R Logic
+    const entryInput = document.querySelector('input[name="entry_price"]');
+    const stopInput = document.querySelector('input[name="stop_loss"]');
+    const tpInput = document.getElementById('takeProfitInput');
+    const dirInput = document.querySelector('input[name="direction"]'); // Hidden input from custom select
+    const rrDisplay = document.getElementById('rrDisplay');
+    const rrValue = document.getElementById('rrValue');
+
+    function calculateRR() {
+        const e = parseFloat(entryInput.value), s = parseFloat(stopInput.value), t = parseFloat(tpInput.value);
+        const d = dirInput.value;
+        if (!e || !s || !t) { rrDisplay.classList.add('hidden'); return; }
+        const risk = d === "Long" ? e - s : s - e;
+        const reward = d === "Long" ? t - e : e - t;
+        if (risk <= 0 || reward <= 0) { rrDisplay.classList.add('hidden'); return; }
+        const ratio = (reward / risk).toFixed(2);
+        rrValue.textContent = `1:${ratio}`;
+        rrDisplay.classList.remove('hidden');
+        rrValue.className = "rr-value font-bold " + (ratio >= 3 ? "text-emerald-400" : ratio >= 2 ? "text-yellow-400" : "text-red-400");
+    }
+
+    // Custom Select Logic
+    function initCustomSelects() {
+        document.querySelectorAll('.custom-select-wrapper').forEach(wrapper => {
+            if (wrapper._customSelectInit) return;
+            wrapper._customSelectInit = true;
+
+            const btn = wrapper.querySelector('.custom-select-btn');
+            const dropdown = wrapper.querySelector('.custom-select-dropdown');
+            const hiddenInput = wrapper.querySelector('.custom-select-hidden');
+            const options = wrapper.querySelectorAll('.custom-select-option');
+
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = !dropdown.classList.contains('hidden');
+                // Close all others
+                document.querySelectorAll('.custom-select-dropdown').forEach(d => d.classList.add('hidden'));
+                document.querySelectorAll('.custom-select-btn i[data-lucide="chevron-down"]').forEach(i => i.classList.remove('rotate-180'));
+                
+                if (!isOpen) {
+                    dropdown.classList.remove('hidden');
+                    btn.querySelector('i[data-lucide="chevron-down"]').classList.add('rotate-180');
+                    const scroller = document.getElementById('main-scroll-container');
+                    if (scroller) scroller.style.overflow = 'hidden';
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    const scroller = document.getElementById('main-scroll-container');
+                    if (scroller) scroller.style.overflow = '';
+                    document.body.style.overflow = '';
+                }
+            });
+
+            options.forEach(opt => {
+                opt.addEventListener('click', () => {
+                    const val = opt.dataset.value;
+                    hiddenInput.value = val;
+
+                    // Update button label
+                    const labelSpan = btn.querySelector('.custom-select-label');
+                    if (labelSpan) {
+                        labelSpan.textContent = val;
+                        
+                        // Color Map
+                        const colorMap = {
+                            // Direction
+                            'Long': { bg: 'bg-emerald-500/2', border: 'border-emerald-500/10', text: 'text-emerald-400' },
+                            'Short': { bg: 'bg-red-500/2', border: 'border-red-500/10', text: 'text-red-400' },
+                            // Session
+                            'Asian': { bg: 'bg-blue-500/2', border: 'border-blue-500/10', text: 'text-blue-400' },
+                            'London': { bg: 'bg-purple-500/2', border: 'border-purple-500/10', text: 'text-purple-400' },
+                            'New York': { bg: 'bg-amber-500/2', border: 'border-amber-500/10', text: 'text-amber-400' },
+                            'Other': { bg: 'bg-gray-500/2', border: 'border-gray-500/10', text: 'text-gray-400' },
+                            // Emotion
+                            'Neutral': { bg: 'bg-gray-500/2', border: 'border-gray-500/10', text: 'text-gray-400' },
+                            'Greedy': { bg: 'bg-red-500/2', border: 'border-red-500/10', text: 'text-red-400' },
+                            'Fearful': { bg: 'bg-blue-500/2', border: 'border-blue-500/10', text: 'text-blue-400' },
+                            'Patient': { bg: 'bg-green-500/2', border: 'border-green-500/10', text: 'text-green-400' },
+                            'Disciplined': { bg: 'bg-emerald-500/2', border: 'border-emerald-500/10', text: 'text-emerald-400' },
+                            'Impulsive': { bg: 'bg-amber-500/2', border: 'border-amber-500/10', text: 'text-amber-400' }
+                        };
+
+                        const theme = colorMap[val];
+                        if (theme) {
+                            // Reset common classes
+                            btn.className = 'custom-select-btn form-input h-[48px] flex items-center justify-start px-4 gap-2 relative ' + theme.bg + ' ' + theme.border;
+                            labelSpan.className = 'custom-select-label font-bold uppercase tracking-widest text-[11px] ' + theme.text;
+                        }
+                    }
+
+                    // Mark selected
+                    options.forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+
+                    dropdown.classList.add('hidden');
+                    btn.querySelector('i[data-lucide="chevron-down"]').classList.remove('rotate-180');
+                    const scroller = document.getElementById('main-scroll-container');
+                    if (scroller) scroller.style.overflow = '';
+                    document.body.style.overflow = '';
+
+                    // Trigger change for linked logic (like R:R calculation)
+                    const event = new Event('change');
+                    hiddenInput.dispatchEvent(event);
+                    if (wrapper.dataset.formName === 'direction') {
+                        calculateRR();
+                    }
+                });
+            });
+
+            // Initial State styling on load
+            const initialVal = hiddenInput.value;
+            if (initialVal) {
+                const labelSpan = btn.querySelector('.custom-select-label');
+                const colorMap = {
+                    'Long': { bg: 'bg-emerald-500/2', border: 'border-emerald-500/10', text: 'text-emerald-400' },
+                    'Short': { bg: 'bg-red-500/2', border: 'border-red-500/10', text: 'text-red-400' },
+                    'Asian': { bg: 'bg-blue-500/2', border: 'border-blue-500/10', text: 'text-blue-400' },
+                    'London': { bg: 'bg-purple-500/2', border: 'border-purple-500/10', text: 'text-purple-400' },
+                    'New York': { bg: 'bg-amber-500/2', border: 'border-amber-500/10', text: 'text-amber-400' },
+                    'Other': { bg: 'bg-gray-500/2', border: 'border-gray-500/10', text: 'text-gray-400' },
+                    'Neutral': { bg: 'bg-gray-500/2', border: 'border-gray-500/10', text: 'text-gray-300' },
+                    'Greedy': { bg: 'bg-red-500/2', border: 'border-red-500/10', text: 'text-red-400' },
+                    'Fearful': { bg: 'bg-blue-500/2', border: 'border-blue-500/10', text: 'text-blue-400' },
+                    'Patient': { bg: 'bg-green-500/2', border: 'border-green-500/10', text: 'text-green-400' },
+                    'Disciplined': { bg: 'bg-emerald-500/2', border: 'border-emerald-500/10', text: 'text-emerald-400' },
+                    'Impulsive': { bg: 'bg-amber-500/2', border: 'border-amber-500/10', text: 'text-amber-400' }
+                };
+                const theme = colorMap[initialVal];
+                if (theme && labelSpan) {
+                    btn.className = 'custom-select-btn form-input h-[48px] flex items-center justify-start px-4 gap-2 relative ' + theme.bg + ' ' + theme.border;
+                    labelSpan.className = 'custom-select-label font-bold uppercase tracking-widest text-[11px] ' + theme.text;
+                }
+            }
+        });
+    }
+
+    initCustomSelects();
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.custom-select-wrapper')) {
+            document.querySelectorAll('.custom-select-dropdown').forEach(d => d.classList.add('hidden'));
+            document.querySelectorAll('.custom-select-btn i[data-lucide="chevron-down"]').forEach(i => i.classList.remove('rotate-180'));
+            const scroller = document.getElementById('main-scroll-container');
+            if (scroller) scroller.style.overflow = '';
+            document.body.style.overflow = '';
+        }
+    });
+    [entryInput, stopInput, tpInput].forEach(i => i.addEventListener('input', calculateRR));
+    calculateRR();
+
+    // --- Toast Logic ---
     function showToast(title, message, type = 'success') {
         const toast = document.getElementById('toast');
         const toastTitle = document.getElementById('toastTitle');
@@ -590,9 +647,13 @@
         }
 
         toast.classList.remove('translate-y-24', 'opacity-0');
-        setTimeout(() => toast.classList.add('translate-y-24', 'opacity-0'), 3000);
+
+        setTimeout(() => {
+            toast.classList.add('translate-y-24', 'opacity-0');
+        }, 3000);
     }
 
+    // --- Instant Cloudinary Upload for URLs ---
     async function uploadUrlToCloudinary(urlOverride = null) {
         const urlInput = document.getElementById('screenshot_url');
         const url = urlOverride || urlInput.value;
@@ -613,7 +674,28 @@
 
             const data = await response.json();
             if (data.success) {
-                addPreviewToUI(data.url, data.url);
+                const container = document.getElementById("previewContainer");
+                const div = document.createElement("div");
+                div.className = "preview-item";
+                div.draggable = true;
+                div.dataset.name = data.url;
+
+                const img = document.createElement("img");
+                img.src = data.url;
+                img.onclick = () => openFullscreen(data.url);
+
+                const removeBtn = document.createElement("div");
+                removeBtn.className = "remove-btn";
+                removeBtn.innerHTML = "×";
+                removeBtn.onclick = (e) => { e.stopPropagation(); div.remove(); updateOrder(); };
+
+                div.appendChild(img);
+                div.appendChild(removeBtn);
+                container.appendChild(div);
+
+                setupDragEvents(div);
+                updateOrder();
+
                 if (!urlOverride) urlInput.value = "";
                 showToast('Added to Cloud', 'Image saved and optimized');
             } else {
@@ -628,71 +710,62 @@
         }
     }
 
-    // Initialize existing items
-    document.querySelectorAll(".preview-item").forEach(item => setupDragEvents(item));
-
-    // Global Paste Listener
-    document.addEventListener('paste', async (e) => {
+    // --- Global Paste Listener (Instant Cloudinary) ---
+    document.addEventListener('paste', (e) => {
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+
         for (let index in items) {
             const item = items[index];
+
             if (item.kind === 'file' && item.type.includes('image/')) {
                 const blob = item.getAsFile();
                 const formData = new FormData();
                 formData.append('file', blob);
+
                 showToast('Uploading...', 'Processing pasted image');
-                try {
-                    const response = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData });
-                    const data = await response.json();
+
+                fetch('/api/cloudinary/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
                     if (data.success) {
-                        addPreviewToUI(data.url, data.url);
-                        showToast('Image Saved', 'Pasted image uploaded to cloud');
+                        const container = document.getElementById("previewContainer");
+                        const div = document.createElement("div");
+                        div.className = "preview-item";
+                        div.draggable = true;
+                        div.dataset.name = data.url;
+
+                        const img = document.createElement("img");
+                        img.src = data.url;
+                        img.onclick = () => openFullscreen(data.url);
+
+                        const removeBtn = document.createElement("div");
+                        removeBtn.className = "remove-btn";
+                        removeBtn.innerHTML = "×";
+                        removeBtn.onclick = (e) => { e.stopPropagation(); div.remove(); updateOrder(); };
+
+                        div.appendChild(img);
+                        div.appendChild(removeBtn);
+                        container.appendChild(div);
+
+                        setupDragEvents(div);
+                        updateOrder();
+                        showToast('Pasted to Cloud', 'Image optimized and saved');
+                    } else {
+                        showToast('Paste Failed', data.error || 'Upload error', 'error');
                     }
-                } catch (err) {
-                    showToast('Upload Failed', 'Could not upload pasted image', 'error');
-                }
-            } else if (item.kind === 'string' && item.type === 'text/plain') {
-                item.getAsString((text) => {
-                    if (text.match(/\.(jpeg|jpg|gif|png|webp|avif)$/) != null || text.includes('tradingview.com/x/')) {
-                        uploadUrlToCloudinary(text);
-                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast('Network Error', 'Upload failed', 'error');
                 });
             }
         }
     });
 
-    // R:R Calculation Logic for Edit Page
-    const entryInput = document.querySelector('input[name="entry_price"]');
-    const stopInput = document.querySelector('input[name="stop_loss"]');
-    const tpInput = document.getElementById('takeProfitInput');
-    const dirInput = document.querySelector('select[name="direction"]');
-    const rrDisplay = document.getElementById('rrDisplay');
-    const rrValue = document.getElementById('rrValue');
-
-    function calculateRR() {
-        const entry = parseFloat(entryInput.value);
-        const stop = parseFloat(stopInput.value);
-        const tp = parseFloat(tpInput.value);
-        const direction = dirInput.value;
-        if (!entry || !stop || !tp) { rrDisplay.classList.add('hidden'); return; }
-        let risk, reward;
-        if (direction === "Long") { risk = entry - stop; reward = tp - entry; } 
-        else { risk = stop - entry; reward = entry - tp; }
-        if (risk <= 0 || reward <= 0) { rrDisplay.classList.add('hidden'); return; }
-        const ratio = (reward / risk).toFixed(2);
-        rrValue.textContent = `1:${ratio}`;
-        rrDisplay.classList.remove('hidden');
-        rrValue.className = "font-bold " + (ratio >= 3 ? "text-[#00ff99]" : ratio >= 2 ? "text-yellow-400" : "text-red-400");
-    }
-
-    [entryInput, stopInput, tpInput, dirInput].forEach(input => {
-        if (input) {
-            input.addEventListener('input', calculateRR);
-            input.addEventListener('change', calculateRR);
-        }
-    });
-    calculateRR();
+    // Lucide Icons
+    lucide.createIcons();
 </script>
-
-<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
 {% endblock %}

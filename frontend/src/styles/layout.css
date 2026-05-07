@@ -18,7 +18,7 @@
     --loss: #ef4444;
     --profit-green: #00fa9a;
     --loss-red: #ff3b3b;
-    --accent: #3b82f6;
+    --accent: #00ff99;
     --warning: #f59e0b;
 
     /* Spacing Scale */
@@ -771,8 +771,8 @@ button:active,
 }
 
 .form-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--profit);
+    box-shadow: 0 0 0 3px rgba(0, 255, 153, 0.1);
 }
 
 .form-label {

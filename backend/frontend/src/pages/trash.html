@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Trash - TradeSync{% endblock %}
+{% block content %}
+
+<div class="animate-box">
+    <!-- Page Header -->
+    <div class="page-header flex justify-between items-end mb-10">
+        <div>
+            <h1 class="page-title mb-1">Trash</h1>
+            <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Recovery & History</p>
+        </div>
+        <a href="{{ url_for('settings') }}" class="btn border border-white/10 hover:bg-white/5 text-[10px] py-2.5 px-5 flex items-center gap-2 text-white font-black uppercase tracking-widest transition-all">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            Back to Settings
+        </a>
+    </div>
+
+    <!-- Main Container (Same as Settings) -->
+    <div class="metric-card mb-8">
+        
+        <div class="flex items-center justify-between mb-12">
+            <h3 class="text-xs font-black uppercase tracking-[0.2em] text-white flex items-center gap-4">
+                <i data-lucide="trash-2" class="w-6 h-6 text-emerald-400"></i>
+                Deleted Items Repository
+            </h3>
+        </div>
+
+        {% if not firms and not accounts %}
+        <div class="flex flex-col items-center justify-center py-24 text-center">
+            <div class="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 mb-6 border border-emerald-500/10">
+                <i data-lucide="inbox" class="w-10 h-10"></i>
+            </div>
+            <h2 class="text-xl font-black text-white uppercase tracking-tight mb-2">Your Trash is Clean</h2>
+            <p class="text-gray-500 text-xs max-w-xs mx-auto mb-8 font-bold uppercase tracking-widest leading-loose">No deleted firms or phases found.</p>
+            <a href="{{ url_for('settings') }}" class="btn btn-primary px-8">Manage Active Firms</a>
+        </div>
+        {% else %}
+
+        <div class="space-y-12">
+            <!-- Deleted Firms Section -->
+            {% if firms %}
+            <div class="space-y-6">
+                <h4 class="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Deleted Firms</h4>
+                <div class="grid grid-cols-1 gap-4">
+                    {% for firm in firms %}
+                    <div class="p-6 rounded-3xl bg-white/[0.02] border border-white/5 hover:border-emerald-500/20 transition-all group relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-500/0 to-emerald-500/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        
+                        <div class="flex items-center justify-between relative z-10">
+                            <div class="flex items-center gap-6">
+                                <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 border border-emerald-500/10">
+                                    <i data-lucide="building-2" class="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-xl font-black text-white uppercase tracking-tight">{{ firm.name }}</h4>
+                                    <p class="text-[10px] text-gray-500 font-black uppercase tracking-widest mt-1.5 flex items-center gap-2">
+                                        <span class="text-emerald-400">Deleted {{ firm.deleted_at.strftime('%b %d, %Y') }}</span>
+                                        <span class="w-1 h-1 rounded-full bg-gray-700"></span>
+                                        <span>{{ firm.accounts|length }} Phases Included</span>
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-3">
+                                <form action="{{ url_for('restore_prop_firm', firm_id=firm.id) }}" method="POST">
+                                    <button type="submit" class="btn border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 px-6 py-3 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg hover:shadow-emerald-500/10">
+                                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                        Restore Full Firm
+                                    </button>
+                                </form>
+                                <form action="{{ url_for('permanent_delete_prop_firm', firm_id=firm.id) }}" method="POST" onsubmit="return confirm('PERMANENTLY delete this firm? This cannot be undone.')">
+                                    <button type="submit" class="p-3 rounded-2xl bg-white/5 border border-white/10 text-gray-500 hover:text-red-500 hover:bg-red-500/10 hover:border-red-500/20 transition-all" title="Delete Permanently">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Deleted Individual Phases Section -->
+            {% if accounts %}
+            <div class="space-y-6 pt-12 border-t border-white/5">
+                <h4 class="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Individual Deleted Phases</h4>
+                <div class="space-y-3">
+                    {% for account in accounts %}
+                    <div class="flex items-center justify-between p-5 rounded-2xl bg-white/[0.015] border border-white/5 hover:bg-white/[0.03] transition-all group">
+                        <div class="flex items-center gap-6">
+                            <div class="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest
+                                {% if account.phase == 'Phase 1' %} bg-amber-500/20 text-amber-400
+                                {% elif account.phase == 'Phase 2' %} bg-purple-500/20 text-purple-400
+                                {% else %} bg-emerald-500/20 text-emerald-400 {% endif %}">
+                                {{ account.phase }}
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-white text-sm uppercase tracking-tight">{{ account.firm.name }} <span class="text-gray-500 ml-2 font-medium">/</span> <span class="text-gray-400 ml-1">{{ account.phase }}</span></h4>
+                                <p class="text-[9px] text-gray-500 uppercase font-black tracking-widest mt-1">
+                                    Initial Capital: {{ account.initial_balance | format_currency }} • Deleted {{ account.deleted_at.strftime('%b %d') }}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                            <form action="{{ url_for('restore_funded_account', account_id=account.id) }}" method="POST">
+                                <button type="submit" class="p-3 rounded-xl border border-white/10 text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 hover:border-emerald-500/20 transition-all" title="Restore Phase">
+                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                </button>
+                            </form>
+                            <form action="{{ url_for('permanent_delete_funded_account', account_id=account.id) }}" method="POST" onsubmit="return confirm('PERMANENTLY delete this phase?')">
+                                <button type="submit" class="p-3 rounded-xl border border-white/10 text-gray-500 hover:text-red-500 hover:bg-red-500/10 hover:border-red-500/20 transition-all" title="Delete Permanently">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

@@ -181,7 +181,7 @@
     </div>
 
     <button type="submit"
-        class="bg-[var(--accent)] hover:bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-900/10">Apply</button>
+        class="bg-[var(--profit)] hover:bg-[#00e68a] text-black px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-[#00ff99]/10">Apply</button>
     <a href="{{ url_for('journal', view=view) }}"
         class="bg-[#1a1a1f] border border-gray-800 text-gray-400 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#222] flex items-center transition-all">Reset</a>
 </form>
@@ -212,7 +212,10 @@
             </thead>
             <tbody>
                 {% for trade in trades %}
-                <tr id="trade-row-{{ trade.id }}" class="{{ 'deleted-row' if trade.is_deleted else '' }}">
+                <tr id="trade-row-{{ trade.id }}"
+                    class="{{ 'deleted-row' if trade.is_deleted else '' }} hover:bg-white/5 transition-colors cursor-pointer outline-none focus:bg-white/10 focus:ring-1 focus:ring-blue-500/50"
+                    tabindex="0"
+                    onclick="if(!event.target.closest('button') && !event.target.closest('a') && !{{ 'true' if trade.is_deleted else 'false' }}) window.location.href='{{ url_for('edit_trade', trade_id=trade.id) }}'">
                     <td class="text-gray-500">{{ trade.date.strftime('%Y-%m-%d') }}</td>
                     <td class="font-bold">{{ trade.symbol }}</td>
                     <td>
@@ -275,7 +278,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="text-center text-gray-500 py-12 italic">
+                    <td colspan="9" class="text-center text-gray-500 py-12 italic">
                         {{ 'Trash is empty.' if view == 'trash' else 'No trades recorded yet.' }}
                     </td>
                 </tr>
@@ -300,7 +303,7 @@
         {% for p in range(1, total_pages + 1) %}
         <a href="{{ url_for('journal', view=view, page=p, symbol=request.args.get('symbol'), direction=request.args.get('direction')) }}"
             class="w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all no-underline
-           {{ 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' if p == page else 'border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' }}">
+           {{ 'bg-[var(--profit)] text-black shadow-md shadow-[#00ff99]/10' if p == page else 'border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' }}">
             {{ p }}
         </a>
         {% endfor %}
@@ -323,6 +326,53 @@
 </div>
 
 <script>
+    // Global Paste Listener for Table Rows
+    document.addEventListener('DOMContentLoaded', () => {
+        const rows = document.querySelectorAll('tr[id^="trade-row-"]');
+
+        rows.forEach(row => {
+            row.addEventListener('paste', async (e) => {
+                // Prevent default paste (e.g. double pasting if focused in input)
+                // But we are on a TR, so mostly safe.
+
+                const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+                if (!pasteData || !pasteData.startsWith('http')) return;
+
+                e.preventDefault();
+
+                const tradeId = row.id.replace('trade-row-', '');
+
+                // visual feedback processing
+                row.style.background = "rgba(59, 130, 246, 0.2)";
+
+                try {
+                    const res = await fetch(`/trade/${tradeId}/add_url`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: pasteData })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        // Success Feedback
+                        row.style.background = "rgba(0, 255, 153, 0.2)";
+                        setTimeout(() => row.style.background = "", 500);
+
+                        // Reload to show the new icon? Or just append it dynamically?
+                        // Reloading is easiest to ensure state consistency
+                        setTimeout(() => window.location.reload(), 600);
+                    } else {
+                        row.style.background = "rgba(239, 68, 68, 0.2)";
+                        alert('Error: ' + data.error);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    row.style.background = "rgba(239, 68, 68, 0.2)";
+                }
+            });
+        });
+    });
+
     async function deleteTrade(tradeId, isPermanent) {
         if (isPermanent) {
             if (!confirm('Permanently delete this trade? This cannot be undone.')) return;
@@ -359,6 +409,8 @@
             window.location.reload();
         }
     }
+
+
 
     async function restoreTrade(tradeId) {
         const url = `/trade/restore/${tradeId}`;

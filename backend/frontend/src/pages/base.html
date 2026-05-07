@@ -10,7 +10,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap"
         rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="icon" href="data:,">
     <!-- PWA Manifest for Standalone Mode -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles/layout.css') }}">
@@ -146,11 +146,7 @@
     <div
         class="md:hidden fixed top-0 left-0 w-full h-16 bg-[#050505] border-b border-gray-900 flex items-center justify-between px-4 z-50">
         <div class="logo">
-            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
-            <span class="logo-trade">Backtest</span><span class="logo-journal">Mode</span>
-            {% else %}
             <span class="logo-trade">Trade</span><span class="logo-journal">Journal</span>
-            {% endif %}
         </div>
         <button id="menuBtn" class="text-gray-300 hover:text-white p-2 text-2xl">
             ☰
@@ -167,46 +163,87 @@
         </div>
 
         <div class="logo mb-8 px-6 pt-6 hidden md:block">
-            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
-            <span class="logo-trade">Backtest</span><span class="logo-journal">Mode</span>
-            {% else %}
             <span class="logo-trade">Trade</span><span class="logo-journal">Journal</span>
-            {% endif %}
         </div>
+
+        <!-- Account Switcher -->
+        {% if current_user.is_authenticated %}
+        <div class="px-4 mb-6">
+            <div class="relative group">
+                <button id="accountSelectorBtn" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-sm group">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                            <i data-lucide="wallet" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-left min-w-0">
+                            <p class="text-[9px] text-gray-500 font-bold uppercase tracking-wider leading-none mb-1">Funded Account</p>
+                            <div class="flex items-center gap-2 overflow-hidden">
+                                <p class="font-bold text-white truncate">{{ active_account.firm.name if active_account.firm else active_account.name }}</p>
+                                <span class="px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tighter shrink-0
+                                    {% if active_account.phase == 'Phase 1' %} bg-amber-500/20 text-amber-400
+                                    {% elif active_account.phase == 'Phase 2' %} bg-purple-500/20 text-purple-400
+                                    {% else %} bg-emerald-500/20 text-emerald-400 {% endif %}">
+                                    {{ active_account.phase or 'Funded' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-gray-600 group-hover:text-white transition-colors shrink-0 ml-2"></i>
+                </button>
+
+                <!-- Dropdown -->
+                <div id="accountDropdown" class="absolute left-0 w-full mt-2 bg-[#0a0a0a] border border-gray-800 rounded-2xl shadow-2xl overflow-hidden hidden z-50">
+                    <div class="max-h-80 overflow-y-auto scrollbar-thin">
+                        {% for firm in all_firms %}
+                        {% set is_active_firm = active_account.firm_id == firm.id %}
+                        <div class="px-6 py-3 bg-white/[0.04] border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.06] transition-colors group/header"
+                             onclick="toggleFirmPhases(event, 'firm-phases-{{ firm.id }}')">
+                            <p class="text-[11px] font-black text-emerald-400 uppercase tracking-widest">{{ firm.name }}</p>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="chevron-down" class="w-3 h-3 text-gray-500 group-hover/header:text-white transition-transform {{ '' if is_active_firm else '-rotate-90' }}" id="chevron-firm-phases-{{ firm.id }}"></i>
+                                <i data-lucide="building-2" class="w-3 h-3 text-emerald-400/30"></i>
+                            </div>
+                        </div>
+                        
+                        <div id="firm-phases-{{ firm.id }}" class="{{ '' if is_active_firm else 'hidden' }}">
+                            {% for account in firm.accounts if not account.is_deleted %}
+                            <a href="{{ url_for('set_active_account', account_id=account.id) }}" 
+                               class="flex items-center justify-between px-6 py-3 hover:bg-white/5 transition-colors {{ 'bg-emerald-500/10 border-l-4 border-emerald-500' if account.id == active_account.id else '' }}">
+                                <div class="overflow-hidden flex-1">
+                                    <div class="flex items-center gap-2 mb-0.5">
+                                        <p class="text-sm font-bold text-white truncate">{{ account.phase }}</p>
+                                        <span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight shrink-0
+                                            {% if account.phase == 'Phase 1' %} bg-amber-500/20 text-amber-400
+                                            {% elif account.phase == 'Phase 2' %} bg-purple-500/20 text-purple-400
+                                            {% else %} bg-emerald-500/20 text-emerald-400 {% endif %}">
+                                            {{ account.phase }}
+                                        </span>
+                                    </div>
+                                    <p class="text-[10px] text-gray-500 font-medium">{{ account.initial_balance | format_currency }} balance</p>
+                                </div>
+                                {% if account.id == active_account.id %}
+                                <i data-lucide="check" class="w-4 h-4 text-emerald-500 shrink-0 ml-2"></i>
+                                {% endif %}
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="p-2 border-t border-gray-800 bg-[#050505]">
+                        <a href="{{ url_for('settings') }}" class="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors">
+                            <i data-lucide="plus" class="w-3 h-3"></i>
+                            Manage Accounts
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Mobile padding helper -->
         <div class="h-16 md:hidden"></div>
 
         <nav class="nav-links space-y-2 flex-1 px-4 py-4 md:p-0">
-            {% if current_user.is_authenticated and current_user.account_type == 'backtest' %}
-            <!-- Backtesting Mode Navbar -->
-            <a href="{{ url_for('chart_page') }}"
-                class="nav-item {{ 'active' if request.endpoint == 'chart_page' else '' }}">
-                <i data-lucide="line-chart" class="w-4 h-4"></i>
-                Chart
-            </a>
-
-            <a href="#" class="nav-item">
-                <i data-lucide="play" class="w-4 h-4"></i>
-                Replay
-            </a>
-
-            <a href="#" class="nav-item">
-                <i data-lucide="pencil-line" class="w-4 h-4"></i>
-                Strategy Tester
-            </a>
-
-            <a href="#" class="nav-item">
-                <i data-lucide="bar-chart" class="w-4 h-4"></i>
-                Results
-            </a>
-
-            <a href="{{ url_for('settings') }}"
-                class="nav-item {{ 'active' if request.endpoint == 'settings' else '' }}">
-                <i data-lucide="settings" class="w-4 h-4"></i>
-                Settings
-            </a>
-            {% else %}
             <!-- Trading Journal Navbar (Default) -->
             <a href="{{ url_for('dashboard') }}"
                 class="nav-item {{ 'active' if request.endpoint == 'dashboard' else '' }}">
@@ -231,12 +268,17 @@
                 Analytics
             </a>
 
+            <a href="{{ url_for('analysis') }}"
+                class="nav-item {{ 'active' if request.endpoint.startswith('analysis') else '' }}">
+                <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                Analysis
+            </a>
+
             <a href="{{ url_for('settings') }}"
                 class="nav-item {{ 'active' if request.endpoint == 'settings' else '' }}">
                 <i data-lucide="settings" class="w-4 h-4"></i>
                 Settings
             </a>
-            {% endif %}
         </nav>
 
         <div class="mt-auto p-4 border-t border-gray-900">
@@ -255,15 +297,22 @@
     <!-- Main Content -->
     <main
         class="flex-1 bg-transparent md:rounded-xl md:border border-gray-900/50 relative overflow-hidden flex flex-col h-full md:h-[calc(100vh-2rem)] md:m-4 md:ml-0 mt-16 md:mt-0">
-        <div
+        <div id="main-scroll-container"
             class="p-4 md:p-8 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
-            {% with messages = get_flashed_messages() %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-            {% for message in messages %}
-            <div class="mb-4 p-4 rounded-lg bg-blue-900/20 border border-blue-500/30 text-blue-200 text-sm">
-                {{ message }}
+            <div id="toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+                {% for category, message in messages %}
+                <div class="toast-msg pointer-events-auto flex items-center gap-4 px-6 py-4 rounded-2xl border shadow-2xl shadow-black/60 backdrop-blur-2xl max-w-sm
+                    {% if category == 'error' or category == 'danger' %} bg-red-950/95 border-red-500/40 text-red-100
+                    {% elif category == 'warning' %} bg-amber-950/95 border-amber-500/40 text-amber-100
+                    {% else %} bg-[#0a1a0f]/95 border-emerald-500/30 text-emerald-50 {% endif %}">
+                    <i data-lucide="{% if category == 'error' or category == 'danger' %}alert-circle{% elif category == 'warning' %}alert-triangle{% else %}check-circle-2{% endif %}"
+                       class="w-6 h-6 shrink-0 {% if category == 'error' or category == 'danger' %}text-red-400{% elif category == 'warning' %}text-amber-400{% else %}text-emerald-400{% endif %}"></i>
+                    <p class="text-sm font-bold leading-relaxed tracking-tight">{{ message }}</p>
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
             {% endif %}
             {% endwith %}
 
@@ -272,22 +321,32 @@
     </main>
 
     <style>
-        /* Custom scrollbar */
+        /* Hide scrollbars but keep functionality */
         .scrollbar-thin::-webkit-scrollbar {
-            width: 6px;
+            display: none;
         }
 
-        .scrollbar-thin::-webkit-scrollbar-track {
-            background: transparent;
+        .scrollbar-thin {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
         }
 
-        .scrollbar-thin::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 20px;
+        /* Global hide scrollbar */
+        #main-scroll-container {
+            overscroll-behavior: contain;
         }
 
-        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-            background: #444;
+        input[type="number"] {
+            overscroll-behavior: contain;
+        }
+
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        * {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
         }
 
         .glass-backdrop {
@@ -320,6 +379,51 @@
         // Initialize Lucide Icons
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
+        }
+
+        // Auto-dismiss toast notifications after 1 second
+        (function() {
+            const toasts = document.querySelectorAll('.toast-msg');
+            toasts.forEach((toast, i) => {
+                // Stagger slightly if multiple
+                const delay = 5000 + i * 150;
+                setTimeout(() => {
+                    toast.style.transition = 'opacity 0.4s ease, transform 0.4s ease, max-height 0.4s ease, margin 0.4s ease, padding 0.4s ease';
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateX(20px)';
+                    toast.style.maxHeight = '0';
+                    toast.style.padding = '0';
+                    toast.style.margin = '0';
+                    setTimeout(() => toast.remove(), 420);
+                }, delay);
+            });
+        })();
+
+        // Account Switcher Toggle
+        const accBtn = document.getElementById('accountSelectorBtn');
+        const accDropdown = document.getElementById('accountDropdown');
+
+        if (accBtn && accDropdown) {
+            accBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                accDropdown.classList.toggle('hidden');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!accDropdown.contains(e.target) && !accBtn.contains(e.target)) {
+                    accDropdown.classList.add('hidden');
+                }
+            });
+        }
+
+        function toggleFirmPhases(e, firmId) {
+            e.stopPropagation();
+            const container = document.getElementById(firmId);
+            const chevron = document.getElementById('chevron-' + firmId);
+            if (container && chevron) {
+                container.classList.toggle('hidden');
+                chevron.classList.toggle('-rotate-90');
+            }
         }
     </script>
     <!-- Lightbox Overlay -->

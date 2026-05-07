@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
-from models import db, bcrypt, User, Task, Trade, RiskSettings, AnalysisHistory
+from models import db, bcrypt, User, Task, Trade, RiskSettings, AnalysisHistory, FundedAccount, PropFirm
 from config import Config
 import hashlib
 import threading
@@ -147,6 +147,207 @@ app.config.update(
 @app.before_request
 def refresh_session():
     session.permanent = True
+    if current_user.is_authenticated:
+        # Ensure user has an active account set
+        if not current_user.active_account_id:
+            account = FundedAccount.query.filter_by(user_id=current_user.id).first()
+            if account:
+                current_user.active_account_id = account.id
+                db.session.commit()
+            else:
+                # Create a default if somehow missing
+                default_acc = FundedAccount(user_id=current_user.id, name="Main Account", initial_balance=current_user.initial_balance)
+                db.session.add(default_acc)
+                db.session.flush()
+                current_user.active_account_id = default_acc.id
+                db.session.commit()
+
+@app.context_processor
+def inject_active_account():
+    if current_user.is_authenticated:
+        active_acc = FundedAccount.query.get(current_user.active_account_id)
+        # Fetch all non-deleted firms with their non-deleted accounts
+        all_firms = PropFirm.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(PropFirm.created_at.desc()).all()
+        return dict(active_account=active_acc, all_firms=all_firms)
+    return dict(active_account=None, all_firms=[])
+
+@app.route('/set_active_account/<int:account_id>')
+@login_required
+def set_active_account(account_id):
+    account = FundedAccount.query.filter_by(id=account_id, user_id=current_user.id).first_or_404()
+    current_user.active_account_id = account.id
+    db.session.commit()
+    flash(f"Switched to account: {account.phase}", "success")
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/prop_firm/add', methods=['POST'])
+@login_required
+def add_prop_firm():
+    name = request.form.get('name')
+    if name:
+        new_firm = PropFirm(user_id=current_user.id, name=name)
+        db.session.add(new_firm)
+        db.session.commit()
+        # Automatically create a "Phase 1" for it
+        new_acc = FundedAccount(user_id=current_user.id, firm_id=new_firm.id, name=name, phase="Phase 1", initial_balance=0.0)
+        db.session.add(new_acc)
+        db.session.commit()
+        # Set as active
+        current_user.active_account_id = new_acc.id
+        db.session.commit()
+        flash(f"Prop Firm '{name}' created!", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/prop_firm/edit/<int:firm_id>', methods=['POST'])
+@login_required
+def edit_prop_firm(firm_id):
+    firm = PropFirm.query.filter_by(id=firm_id, user_id=current_user.id).first_or_404()
+    name = request.form.get('name')
+    if name:
+        firm.name = name
+        # Update all child accounts name too if desired, but maybe keep them separate?
+        # Typically the "Name" of the phase is just a label, but let's sync for consistency
+        for acc in firm.accounts:
+            acc.name = name
+        db.session.commit()
+        flash("Firm name updated!", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/prop_firm/delete/<int:firm_id>', methods=['POST'])
+@login_required
+def delete_prop_firm(firm_id):
+    firm = PropFirm.query.filter_by(id=firm_id, user_id=current_user.id).first_or_404()
+    
+    # Check if this contains the active account
+    active_in_firm = any(acc.id == current_user.active_account_id for acc in firm.accounts)
+    
+    firm.is_deleted = True
+    firm.deleted_at = datetime.utcnow()
+    # Also soft delete all child accounts
+    for acc in firm.accounts:
+        acc.is_deleted = True
+        acc.deleted_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    if active_in_firm:
+        other_acc = FundedAccount.query.filter_by(user_id=current_user.id, is_deleted=False).first()
+        if other_acc:
+            current_user.active_account_id = other_acc.id
+        else:
+            current_user.active_account_id = None
+        db.session.commit()
+        
+    flash("Prop Firm moved to Trash.", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/prop_firm/restore/<int:firm_id>', methods=['POST'])
+@login_required
+def restore_prop_firm(firm_id):
+    firm = PropFirm.query.filter_by(id=firm_id, user_id=current_user.id).first_or_404()
+    firm.is_deleted = False
+    # Also restore all child accounts
+    for acc in firm.accounts:
+        acc.is_deleted = False
+    db.session.commit()
+    flash(f"Restored {firm.name}", "success")
+    return redirect(url_for('trash'))
+
+@app.route('/prop_firm/permanent_delete/<int:firm_id>', methods=['POST'])
+@login_required
+def permanent_delete_prop_firm(firm_id):
+    firm = PropFirm.query.filter_by(id=firm_id, user_id=current_user.id, is_deleted=True).first_or_404()
+    db.session.delete(firm)
+    db.session.commit()
+    flash("Prop Firm permanently deleted.", "success")
+    return redirect(url_for('trash'))
+
+@app.route('/funded_account/add', methods=['POST'])
+@login_required
+def add_funded_account():
+    firm_id = request.form.get('firm_id')
+    phase = request.form.get('phase', 'Funded')
+    balance = float(request.form.get('balance', 0))
+    
+    firm = PropFirm.query.filter_by(id=firm_id, user_id=current_user.id).first_or_404()
+    
+    new_acc = FundedAccount(user_id=current_user.id, firm_id=firm.id, name=firm.name, phase=phase, initial_balance=balance)
+    db.session.add(new_acc)
+    db.session.commit()
+    # Set as active automatically
+    current_user.active_account_id = new_acc.id
+    db.session.commit()
+    flash(f"'{phase}' added to {firm.name}!", "success")
+    
+    return redirect(url_for('settings'))
+
+@app.route('/funded_account/edit/<int:account_id>', methods=['POST'])
+@login_required
+def edit_funded_account(account_id):
+    account = FundedAccount.query.filter_by(id=account_id, user_id=current_user.id).first_or_404()
+    name = request.form.get('name')
+    phase = request.form.get('phase')
+    balance = request.form.get('balance')
+    
+    if name:
+        account.name = name
+    if phase:
+        account.phase = phase
+    if balance:
+        account.initial_balance = float(balance)
+        
+    db.session.commit()
+    flash("Account updated successfully!", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/funded_account/delete/<int:account_id>', methods=['POST'])
+@login_required
+def delete_funded_account(account_id):
+    account = FundedAccount.query.filter_by(id=account_id, user_id=current_user.id).first_or_404()
+    
+    # Don't delete if it's the only account
+    count = FundedAccount.query.filter_by(user_id=current_user.id).count()
+    if count <= 1:
+        flash("You must have at least one account.", "danger")
+        return redirect(url_for('settings'))
+    
+    account.is_deleted = True
+    account.deleted_at = datetime.utcnow()
+    db.session.commit()
+    
+    # Reset active account if we deleted it
+    if current_user.active_account_id == account_id:
+        other_acc = FundedAccount.query.filter_by(user_id=current_user.id, is_deleted=False).first()
+        current_user.active_account_id = other_acc.id if other_acc else None
+        db.session.commit()
+        
+    flash("Account moved to Trash.", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/funded_account/restore/<int:account_id>', methods=['POST'])
+@login_required
+def restore_funded_account(account_id):
+    account = FundedAccount.query.filter_by(id=account_id, user_id=current_user.id).first_or_404()
+    account.is_deleted = False
+    # If the parent firm is deleted, we must restore it too or re-link? 
+    # Usually we restore the parent if it's deleted.
+    if account.firm and account.firm.is_deleted:
+        account.firm.is_deleted = False
+        flash(f"Restored {account.phase} and its parent firm {account.firm.name}", "success")
+    else:
+        flash(f"Restored {account.phase}", "success")
+        
+    db.session.commit()
+    return redirect(url_for('trash'))
+
+@app.route('/funded_account/permanent_delete/<int:account_id>', methods=['POST'])
+@login_required
+def permanent_delete_funded_account(account_id):
+    account = FundedAccount.query.filter_by(id=account_id, user_id=current_user.id, is_deleted=True).first_or_404()
+    db.session.delete(account)
+    db.session.commit()
+    flash("Account phase permanently deleted.", "success")
+    return redirect(url_for('trash'))
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -282,6 +483,32 @@ def generate_cloudinary_public_id(base_name="trade_screenshot"):
     random_hex = secrets.token_hex(4)
     return f"{date_str}_{day_str}_{base_name}_{random_hex}"
 
+def get_cloudinary_folder(subfolder="trades", separate_in_user=False):
+    """
+    Generates a Cloudinary folder path based on user hierarchy:
+    If separate_in_user=True: trading_journal/user_{id}/{subfolder}
+    If separate_in_user=False: trading_journal/user_{id}/{FirmName}/{PhaseName}/{subfolder}
+    """
+    base_folder = f"trading_journal/user_{current_user.id}"
+    
+    if separate_in_user:
+        return f"{base_folder}/{subfolder}"
+    
+    # Attempt to get Firm and Phase for hierarchical sorting
+    try:
+        # We check for active_account_id which is stored on the User model
+        if hasattr(current_user, 'active_account_id') and current_user.active_account_id:
+            account = FundedAccount.query.get(current_user.active_account_id)
+            if account:
+                firm_name = secure_filename(account.firm.name) if (account.firm and account.firm.name) else "Manual"
+                phase_name = secure_filename(account.phase) if account.phase else "Funded"
+                return f"{base_folder}/{firm_name}/{phase_name}/{subfolder}"
+    except Exception as e:
+        print(f"Cloudinary Folder Resolution Error: {e}")
+        
+    # Fallback to user root subfolder if anything fails
+    return f"{base_folder}/{subfolder}"
+
 def get_cloudinary_id(url):
     """Extracts public ID from Cloudinary URL, normalized for comparison"""
     if not url or 'cloudinary' not in url: return None
@@ -330,7 +557,7 @@ def analysis():
                     # Cloudinary Upload with Auto-Compression & Resize
                     result = cloudinary.uploader.upload(
                         file,
-                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        folder=get_cloudinary_folder("analysis", separate_in_user=True),
                         public_id=generate_cloudinary_public_id("analysis_before"),
                         transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                     )
@@ -385,7 +612,7 @@ def edit_analysis(id):
                     # Cloudinary Upload with Auto-Compression & Resize
                     result = cloudinary.uploader.upload(
                         file,
-                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        folder=get_cloudinary_folder("analysis", separate_in_user=True),
                         public_id=generate_cloudinary_public_id("analysis_before"),
                         transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                     )
@@ -397,7 +624,7 @@ def edit_analysis(id):
                     # Cloudinary Upload with Auto-Compression & Resize
                     result = cloudinary.uploader.upload(
                         file,
-                        folder=f"trading_journal/user_{current_user.id}/analysis",
+                        folder=get_cloudinary_folder("analysis", separate_in_user=True),
                         public_id=generate_cloudinary_public_id("analysis_after"),
                         transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                     )
@@ -469,7 +696,7 @@ def update_analysis(id):
                 # Cloudinary Upload with Auto-Compression & Resize
                 result = cloudinary.uploader.upload(
                     file,
-                    folder=f"trading_journal/user_{current_user.id}/analysis",
+                    folder=get_cloudinary_folder("analysis", separate_in_user=True),
                     public_id=generate_cloudinary_public_id("analysis_before"),
                     transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                 )
@@ -485,7 +712,7 @@ def update_analysis(id):
                 # Cloudinary Upload with Auto-Compression & Resize
                 result = cloudinary.uploader.upload(
                     file,
-                    folder=f"trading_journal/user_{current_user.id}/analysis",
+                    folder=get_cloudinary_folder("analysis", separate_in_user=True),
                     public_id=generate_cloudinary_public_id("analysis_after"),
                     transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                 )
@@ -571,7 +798,7 @@ def api_cloudinary_upload():
             if file and file.filename != '' and allowed_file(file.filename):
                 result = cloudinary.uploader.upload(
                     file,
-                    folder=f"trading_journal/user_{current_user.id}/instant_uploads",
+                    folder=get_cloudinary_folder("instant_uploads"),
                     public_id=generate_cloudinary_public_id("instant_file"),
                     transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                 )
@@ -595,7 +822,7 @@ def api_cloudinary_upload():
 
             result = cloudinary.uploader.upload(
                 target_url,
-                folder=f"trading_journal/user_{current_user.id}/instant_uploads",
+                folder=get_cloudinary_folder("instant_uploads"),
                 public_id=generate_cloudinary_public_id("instant_url"),
                 transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
             )
@@ -834,7 +1061,11 @@ def dashboard():
     # 🔥 Access Check: Journal user only (treat None as journal)
 
 
-    trades = Trade.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(Trade.date.asc()).all()
+    active_acc = FundedAccount.query.get(current_user.active_account_id)
+    if not active_acc:
+        return redirect(url_for('settings')) # Fallback
+
+    trades = Trade.query.filter_by(user_id=current_user.id, account_id=active_acc.id, is_deleted=False).order_by(Trade.date.asc()).all()
 
     total_trades = len(trades)
     net_profit = sum(t.pnl for t in trades)
@@ -848,7 +1079,7 @@ def dashboard():
     # Calculate Equity Curve
     equity_labels = []
     equity_data = []
-    running_balance = current_user.initial_balance
+    running_balance = active_acc.initial_balance
     
     # Add initial point
     equity_labels.append('Start')
@@ -867,7 +1098,7 @@ def dashboard():
         "total_trades": total_trades,
         "todays_pnl": 0,
         "risk_alert": False,
-        "current_balance": current_user.initial_balance + net_profit
+        "current_balance": active_acc.initial_balance + net_profit
     }
     
     # Calculate today's PnL correctly using SQL (Prop-Firm Standard)
@@ -876,11 +1107,11 @@ def dashboard():
     # Calculate today's PnL correctly using Broker Day Window (03:30 IST)
     start_utc, end_utc = get_broker_day_window()
     
-    today_pnl_row = db.session.execute(text("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)"), {"start": start_utc, "end": end_utc}).fetchone()
+    today_pnl_row = db.session.execute(text("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE user_id = :uid AND account_id = :aid AND date >= :start AND date < :end AND (is_deleted = FALSE OR is_deleted IS NULL)"), {"uid": current_user.id, "aid": active_acc.id, "start": start_utc, "end": end_utc}).fetchone()
     
     todays_trades = [t for t in trades if t.date and t.date.date() == date.today()] # Simple day check if utc/ist not critical here, but ideally uses window
     # Actually, let's use all_trades for global gross profit to be accurate across pagination if any
-    all_user_trades = Trade.query.filter_by(user_id=current_user.id, is_deleted=False).all()
+    all_user_trades = Trade.query.filter_by(user_id=current_user.id, account_id=active_acc.id, is_deleted=False).all()
     all_time_gross_profit = sum(t.pnl for t in all_user_trades if t.pnl > 0)
     
     # Professional Risk Tracking: Profit doesn't buffer loss limit
@@ -970,11 +1201,11 @@ def dashboard():
     is_sqlite = 'sqlite' in db.engine.dialect.name
     
     if is_sqlite:
-        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
+        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
     else:
-        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
+        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
 
-    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "month": month_str}).fetchall()
+    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "aid": active_acc.id, "month": month_str}).fetchall()
     
     calendar_map = {row.broker_day: {"pnl": row.pnl, "count": row.trade_count, "breached": (row.pnl < 0 and abs(row.pnl) >= max_daily_loss)} 
                     for row in calendar_data_rows}
@@ -1002,7 +1233,7 @@ def dashboard():
         calendar_weeks.append(week_days)
 
     return render_template('dashboard.html', 
-                         base_balance=current_user.initial_balance,
+                         base_balance=active_acc.initial_balance,
                          stats=stats, 
                          trades=trades[::-1][:10], 
                          equity_labels=equity_labels, 
@@ -1030,11 +1261,11 @@ def calendar_api():
     is_sqlite = 'sqlite' in db.engine.dialect.name
     
     if is_sqlite:
-        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
+        sql = "SELECT date(date, '+2 hours') AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) AND strftime('%Y-%m', datetime(date, '+2 hours')) = :month GROUP BY broker_day ORDER BY broker_day"
     else:
-        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
+        sql = "SELECT (date + INTERVAL '2 hours')::date AS broker_day, SUM(pnl) AS pnl, COUNT(*) AS trade_count FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) AND TO_CHAR(date + INTERVAL '2 hours', 'YYYY-MM') = :month GROUP BY broker_day ORDER BY broker_day"
     
-    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "month": month_str}).fetchall()
+    calendar_data_rows = db.session.execute(text(sql), {"uid": current_user.id, "aid": current_user.active_account_id, "month": month_str}).fetchall()
     
     calendar_map = {str(row.broker_day): {
         "pnl": float(row.pnl), 
@@ -1133,7 +1364,7 @@ def new_entry():
                         # Cloudinary Upload with Auto-Compression & Resize
                         result = cloudinary.uploader.upload(
                             file,
-                            folder=f"trading_journal/user_{current_user.id}/trades",
+                            folder=get_cloudinary_folder("trades"),
                             public_id=generate_cloudinary_public_id(f"trade_screenshot_{hashlib.md5(file.filename.encode()).hexdigest()[:8]}"),
                             transformation=[
                                 {"width": 1200, "crop": "limit"},
@@ -1177,7 +1408,7 @@ def new_entry():
                 # Cloudinary Upload
                 result = cloudinary.uploader.upload(
                     target_url,
-                    folder=f"trading_journal/user_{current_user.id}/trades",
+                    folder=get_cloudinary_folder("trades"),
                     public_id=generate_cloudinary_public_id("url_screenshot"),
                     transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                 )
@@ -1211,6 +1442,7 @@ def new_entry():
 
         trade = Trade(
             user_id=current_user.id,
+            account_id=current_user.active_account_id,
             symbol=symbol,
             direction=direction,
             quantity=quantity,
@@ -1258,7 +1490,7 @@ def journal():
     emotion_filter = request.args.get('emotion')
     min_rr = request.args.get('min_rr')
 
-    query = Trade.query.filter_by(user_id=current_user.id)
+    query = Trade.query.filter_by(user_id=current_user.id, account_id=current_user.active_account_id)
     
     if view == 'trash':
         query = query.filter_by(is_deleted=True)
@@ -1375,7 +1607,7 @@ def edit_trade(trade_id):
                         # Cloudinary Upload with Auto-Compression & Resize
                         result = cloudinary.uploader.upload(
                             file,
-                            folder=f"trading_journal/user_{current_user.id}/trades",
+                            folder=get_cloudinary_folder("trades"),
                             public_id=generate_cloudinary_public_id(f"trade_screenshot_{hashlib.md5(file.filename.encode()).hexdigest()[:8]}"),
                             transformation=[
                                 {"width": 1200, "crop": "limit"},
@@ -1402,7 +1634,7 @@ def edit_trade(trade_id):
                 # Upload the URL to Cloudinary
                 result = cloudinary.uploader.upload(
                     target_url,
-                    folder=f"trading_journal/user_{current_user.id}/trades",
+                    folder=get_cloudinary_folder("trades"),
                     public_id=generate_cloudinary_public_id("url_screenshot_edit"),
                     transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
                 )
@@ -1505,7 +1737,7 @@ def add_trade_url(trade_id):
         # Upload the provided URL to Cloudinary
         result = cloudinary.uploader.upload(
             target_url,
-            folder=f"trading_journal/user_{current_user.id}/trade_{trade_id}",
+            folder=get_cloudinary_folder(f"trade_{trade_id}"),
             public_id=generate_cloudinary_public_id("url_screenshot_quick"),
             transformation={"width": 1200, "crop": "limit", "quality": "auto", "fetch_format": "auto"}
         )
@@ -1689,6 +1921,19 @@ def settings():
     
     return render_template('settings.html', goals=current_goals)
 
+@app.route('/trash')
+@login_required
+def trash():
+    deleted_firms = PropFirm.query.filter_by(user_id=current_user.id, is_deleted=True).order_by(PropFirm.deleted_at.desc()).all()
+    # Individual accounts that are deleted but their firm isn't
+    deleted_accounts = FundedAccount.query.join(PropFirm).filter(
+        FundedAccount.user_id == current_user.id,
+        FundedAccount.is_deleted == True,
+        PropFirm.is_deleted == False
+    ).order_by(FundedAccount.deleted_at.desc()).all()
+    
+    return render_template('trash.html', firms=deleted_firms, accounts=deleted_accounts)
+
 
 
 
@@ -1871,31 +2116,31 @@ def analytics():
     
     # 1. Daily Breakdown (Table)
     if is_sqlite:
-        daily_sql = "SELECT DATE(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
+        daily_sql = "SELECT DATE(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
     else:
-        daily_sql = "SELECT date(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
+        daily_sql = "SELECT date(date) AS day, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY day ORDER BY day DESC"
     
-    daily = db.session.execute(text(daily_sql), {"uid": current_user.id}).fetchall()
+    daily = db.session.execute(text(daily_sql), {"uid": current_user.id, "aid": current_user.active_account_id}).fetchall()
 
     # 2. Weekly Breakdown (Table)
     if is_sqlite:
-        weekly_sql = "SELECT strftime('%Y-W%W', date) AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
+        weekly_sql = "SELECT strftime('%Y-W%W', date) AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
     else:
-        weekly_sql = "SELECT TO_CHAR(date, 'IYYY-IW') AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
+        weekly_sql = "SELECT TO_CHAR(date, 'IYYY-IW') AS week, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week ORDER BY week DESC"
         
-    weekly = db.session.execute(text(weekly_sql), {"uid": current_user.id}).fetchall()
+    weekly = db.session.execute(text(weekly_sql), {"uid": current_user.id, "aid": current_user.active_account_id}).fetchall()
 
     # 3. Monthly Breakdown (Table)
     if is_sqlite:
-        monthly_sql = "SELECT strftime('%Y-%m', date) AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
+        monthly_sql = "SELECT strftime('%Y-%m', date) AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
     else:
-        monthly_sql = "SELECT TO_CHAR(date, 'YYYY-MM') AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
+        monthly_sql = "SELECT TO_CHAR(date, 'YYYY-MM') AS month, COUNT(*) AS trades, SUM(pnl) AS pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY month ORDER BY month DESC"
         
-    monthly = db.session.execute(text(monthly_sql), {"uid": current_user.id}).fetchall()
+    monthly = db.session.execute(text(monthly_sql), {"uid": current_user.id, "aid": current_user.active_account_id}).fetchall()
     
     # 4. Equity Curve (Trade-by-Trade) & Drawdown
     # Fetch all trades ordered by date to build granular curve
-    all_trades = Trade.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(Trade.date.asc()).all()
+    all_trades = Trade.query.filter_by(user_id=current_user.id, account_id=current_user.active_account_id, is_deleted=False).order_by(Trade.date.asc()).all()
     
     weekly_equity = [] # Keeping variable name for compatibility, but now it's per-trade
     drawdown_data = []
@@ -1929,11 +2174,11 @@ def analytics():
     # For weekly list table (keep existing logic if needed, or remove if unused)
     # We will keep the query for the table below the chart if it exists
     if is_sqlite:
-        equity_sql = "SELECT date(date, '-6 days', 'weekday 1') as week_start, strftime('%Y-W%W', date) as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
+        equity_sql = "SELECT date(date, '-6 days', 'weekday 1') as week_start, strftime('%Y-W%W', date) as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
     else:
-        equity_sql = "SELECT DATE_TRUNC('week', date)::date as week_start, TO_CHAR(date, 'IYYY-IW') as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
+        equity_sql = "SELECT DATE_TRUNC('week', date)::date as week_start, TO_CHAR(date, 'IYYY-IW') as week_label, SUM(pnl) as pnl FROM trades WHERE user_id = :uid AND account_id = :aid AND (is_deleted = FALSE OR is_deleted IS NULL) GROUP BY week_start, week_label ORDER BY week_start ASC"
     
-    weekly_equity_rows = db.session.execute(text(equity_sql), {"uid": current_user.id}).fetchall()
+    weekly_equity_rows = db.session.execute(text(equity_sql), {"uid": current_user.id, "aid": current_user.active_account_id}).fetchall()
 
     # 5. Weekly List for Dropdown
     weekly_list = [row.week_label for row in weekly_equity_rows]
@@ -2098,6 +2343,10 @@ def run_migrations():
     with app.app_context():
         try:
             with db.engine.begin() as conn:  # engine.begin() auto-commits
+                is_pg = 'postgres' in db.engine.dialect.name.lower()
+                bool_type = "BOOLEAN DEFAULT FALSE" if is_pg else "BOOLEAN DEFAULT 0"
+                dt_type = "TIMESTAMP" if is_pg else "DATETIME"
+
                 # Helper to add column if not exists
                 def add_column(table, column_def):
                     name = column_def.split()[0]
@@ -2115,15 +2364,20 @@ def run_migrations():
                 columns = [
                     ("stop_loss", "FLOAT"), ("take_profit", "FLOAT"), ("screenshot", "VARCHAR(255)"),
                     ("strategy", "VARCHAR(50)"), ("session", "VARCHAR(20)"), ("emotion", "VARCHAR(50)"),
-                    ("is_deleted", "BOOLEAN DEFAULT 0"), ("tags", "TEXT"), ("discipline", "INTEGER"),
-                    ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME"),
-                    ("timeframe", "VARCHAR(20)"), ("deleted_at", "DATETIME"),
+                    ("is_deleted", bool_type), ("tags", "TEXT"), ("discipline", "INTEGER"),
+                    ("timeframe", "VARCHAR(20)"), ("deleted_at", dt_type),
                     ("rr", "FLOAT"), ("duration", "INTEGER") # Ensure Duration is here
                 ]
                 for col, dtype in columns:
                     add_column("trades", f"{col} {dtype}")
 
 
+
+                # Prop Firm & Account columns
+                firm_cols = [("is_deleted", bool_type), ("deleted_at", dt_type)]
+                for col, dtype in firm_cols:
+                    add_column("prop_firms", f"{col} {dtype}")
+                    add_column("funded_accounts", f"{col} {dtype}")
 
                 # User columns
                 user_cols = [
@@ -2185,3 +2439,7 @@ with app.app_context():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+# Trigger reload
+
+# Trigger reload 2
