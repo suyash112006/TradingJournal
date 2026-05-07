@@ -502,12 +502,15 @@ def get_cloudinary_folder(subfolder="trades", separate_in_user=False):
             if account:
                 firm_name = secure_filename(account.firm.name) if (account.firm and account.firm.name) else "Manual"
                 phase_name = secure_filename(account.phase) if account.phase else "Funded"
-                return f"{base_folder}/{firm_name}/{phase_name}/{subfolder}"
+                final_path = f"{base_folder}/{firm_name}/{phase_name}/{subfolder}"
+                print(f"DEBUG: Cloudinary uploading to hierarchical path: {final_path}")
+                return final_path
     except Exception as e:
         print(f"Cloudinary Folder Resolution Error: {e}")
         
-    # Fallback to user root subfolder if anything fails
-    return f"{base_folder}/{subfolder}"
+    final_path = f"{base_folder}/{subfolder}"
+    print(f"DEBUG: Cloudinary uploading to fallback path: {final_path}")
+    return final_path
 
 def get_cloudinary_id(url):
     """Extracts public ID from Cloudinary URL, normalized for comparison"""
