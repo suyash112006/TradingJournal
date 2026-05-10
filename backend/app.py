@@ -3,7 +3,7 @@ import os
 # Ensure the current directory is in the path for Vercel
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session, send_file
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, send_from_directory, abort, session, send_file, g
 
 from sqlalchemy import text, func, inspect, case
 import math
@@ -82,11 +82,13 @@ is_postgres = "postgresql" in str(os.getenv("DATABASE_URL", ""))
 engine_options = {}
 
 if is_postgres:
-    # In Serverless (Vercel), we must NOT pool connections locally. 
-    # We rely on PgBouncer (Transaction Mode) and force NullPool to prevent zombie connections.
+    # Optimized for Serverless + PgBouncer (Transaction Mode)
+    # Using a small pool (size 1) allows reused Vercel instances to skip handshakes.
     engine_options = {
-        "poolclass": NullPool,
+        "pool_size": 1,
+        "max_overflow": 0,
         "pool_pre_ping": True,
+        "pool_recycle": 1800,
     }
 else:
     # Standard pooling for SQLite (Development)
@@ -236,12 +238,13 @@ serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=False  # Set to True in production (HTTPS)
+    SESSION_COOKIE_SECURE=os.environ.get("VERCEL") is not None
 )
 
 @app.before_request
-def refresh_session():
+def start_timer():
     session.permanent = True
+    g.start = time.time()
     if current_user.is_authenticated:
         # Ensure user has an active account set
         if not current_user.active_account_id:
@@ -257,12 +260,37 @@ def refresh_session():
                 current_user.active_account_id = default_acc.id
                 db.session.commit()
 
+@app.after_request
+def log_performance(response):
+    """
+    Production Profiling & Caching Layer
+    """
+    # 1. Performance Timing
+    if hasattr(g, 'start'):
+        duration = time.time() - g.start
+        app.logger.info(f"PERF: {request.path} took {duration:.3f}s")
+
+    # 2. Production CDN & Browser Caching Strategy
+    if 'Cache-Control' not in response.headers:
+        if request.path.startswith('/static/'):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        elif request.path.startswith('/api/'):
+            # API caching with stale-while-revalidate for smoothness
+            response.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=30'
+        else:
+            # Prevent sensitive trading data from being cached by intermediaries
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    return response
+
 @app.context_processor
 def inject_active_account():
     if current_user.is_authenticated:
+        # Optimized joinedload to prevent N+1 queries in the sidebar
+        from sqlalchemy.orm import joinedload
         active_acc = FundedAccount.query.get(current_user.active_account_id)
-        # Fetch all non-deleted firms with their non-deleted accounts
-        all_firms = PropFirm.query.filter_by(user_id=current_user.id, is_deleted=False).order_by(PropFirm.created_at.desc()).all()
+        all_firms = PropFirm.query.options(joinedload(PropFirm.accounts)).filter_by(
+            user_id=current_user.id, is_deleted=False
+        ).order_by(PropFirm.created_at.desc()).all()
         return dict(active_account=active_acc, all_firms=all_firms)
     return dict(active_account=None, all_firms=[])
 

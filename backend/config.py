@@ -49,7 +49,8 @@ class Config:
     print(f"INFO: Database URI Configured: {_masked}")
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes in seconds
+    PERMANENT_SESSION_LIFETIME = 21600  # 6 hours in seconds
+    REMEMBER_COOKIE_DURATION = 21600    # 6 hours in seconds
 
     # Email (Gmail example - fill these with real values to send mail)
     MAIL_SERVER = "smtp.gmail.com"
